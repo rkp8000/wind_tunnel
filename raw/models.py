@@ -1,3 +1,8 @@
+"""
+Models for raw wind tunnel database (and raw wind tunnel sample database).
+"""
+from __future__ import print_function, division
+import numpy as np
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Boolean, Integer, BigInteger, Float, String, Text, DateTime
 from sqlalchemy.orm import relationship, backref
@@ -19,6 +24,20 @@ class Experiment(Base):
     sampling_frequency = Column(Float)
 
 
+class Timepoint(Base):
+    __tablename__ = 'timepoint'
+
+    id = Column(BigInteger, primary_key=True)
+    timestep = Column(Integer)
+    position_x = Column(Float)
+    position_y = Column(Float)
+    position_z = Column(Float)
+    velocity_x = Column(Float)
+    velocity_y = Column(Float)
+    velocity_z = Column(Float)
+    odor = Column(Float)
+
+
 class Trajectory(Base):
     __tablename__ = 'trajectory'
 
@@ -32,19 +51,25 @@ class Trajectory(Base):
 
     experiment = relationship("Experiment", backref='trajectories')
 
+    def positions(self, session):
+        """Get positions associated with this trajectory."""
+        positions = session.query(Timepoint.position_x, Timepoint.position_y,
+                                  Timepoint.position_z).\
+            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        return np.array(positions.all())
 
-class Timepoint(Base):
-    __tablename__ = 'timepoint'
+    def velocities(self, session):
+        """Get velocities associated with this trajectory."""
+        velocities = session.query(Timepoint.velocity_x, Timepoint.velocity_y,
+                                   Timepoint.velocity_z).\
+            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        return np.array(velocities.all())
 
-    id = Column(BigInteger, primary_key=True)
-    timestep = Column(Integer)
-    position_x = Column(Float)
-    position_y = Column(Float)
-    position_z = Column(Float)
-    velocity_x = Column(Float)
-    velocity_y = Column(Float)
-    velocity_z = Column(Float)
-    odor = Column(Float)
+    def odors(self, session):
+        """Get odor time-series associated with this trajectory."""
+        odors = session.query(Timepoint.odor).\
+            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        return np.array(odors.all()).flatten()
 
 
 class SampleTrajectory(Base):
