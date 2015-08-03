@@ -15,7 +15,13 @@ WALL_BOUNDS = ((-0.3, 1.), (-0.15, 0.15), (-0.15, 0.15))
 
 FACE_COLOR = 'white'
 FIG_SIZE = (10, 12)
-PLOT_ODOR_THRESHOLD = 10
+
+if 'mosquito' in EXPERIMENT_ID:
+    PLOT_ODOR_THRESHOLD = 450
+    ODOR_YLIM = (400, 1000)
+else:
+    PLOT_ODOR_THRESHOLD = 10
+    ODOR_YLIM = (0, 550)
 
 
 def speed(velocities):
@@ -74,7 +80,7 @@ for odor_state in ODOR_STATES:
 
         # plot odor
         axs[2].plot(t, odors, lw=2)
-        axs[2].set_ylim(0, 550)
+        axs[2].set_ylim(ODOR_YLIM)
         axs[2].set_xlabel('t (s)')
         axs[2].set_ylabel('odor (a.u.)')
 
