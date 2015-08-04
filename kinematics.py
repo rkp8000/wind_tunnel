@@ -6,6 +6,23 @@ import numpy as np
 np.seterr(all='ignore')
 
 
+def norm(vectors, shape='1darray'):
+    """
+    Calculate the norm, making sure to return a float.
+
+    :param vectors: 2D array of vectors
+    :param shape: whether to return '1darray' or '2darray' w/ same shape as vectors
+    :return: vector norm
+    """
+
+    n = np.linalg.norm(vectors.astype(float), axis=1)
+
+    if shape == '1darray':
+        return n
+    elif shape == '2darray':
+        return np.tile(n, (vectors.shape[1], 1)).T
+
+
 def acceleration(velocities, dt):
     """
     Calculate acceleration from velocity using central differences.
@@ -31,9 +48,9 @@ def heading(velocities):
     v_xyz = velocities.copy().astype(float)
 
     # normalize each set of velocities
-    norm_xy = np.linalg.norm(v_xy, axis=1)
-    norm_xz = np.linalg.norm(v_xz, axis=1)
-    norm_xyz = np.linalg.norm(v_xyz, axis=1)
+    norm_xy = norm(v_xy)
+    norm_xz = norm(v_xz)
+    norm_xyz = norm(v_xyz)
 
     v_xy /= np.tile(norm_xy, (2, 1)).T
     v_xz /= np.tile(norm_xz, (2, 1)).T
@@ -65,7 +82,7 @@ def angular_velocity(velocities, dt):
     """
 
     # calculate normalized velocity vector
-    v_norm = velocities / np.tile(np.linalg.norm(velocities.astype(float), axis=1), (3, 1)).T
+    v_norm = velocities / norm(velocities, shape='2darray')
 
     # get angle between each consecutive pair of normalized velocity vectors
     d_theta = np.arccos((v_norm[:-1, :] * v_norm[1:, :]).sum(1))

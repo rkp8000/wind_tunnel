@@ -162,7 +162,7 @@ class DistanceToWallTestCase(unittest.TestCase):
     def setUp(self):
         print("In test '{}'...".format(self._testMethodName))
 
-    def example_distances_calculated_correctly(self):
+    def test_example_distances_calculated_correctly(self):
         wall_bounds = ((-2, 4), (-1, 3), (-3, 4))
 
         positions = np.array([[-1., 1, 1],
@@ -178,12 +178,31 @@ class DistanceToWallTestCase(unittest.TestCase):
         positions = np.array([[0., 0, 0],
                               [1, 0, 5],
                               [1, 0, 0],
-                              [-2, 0, 0],
-                              [-2, 0, -3]])
+                              [0, -2, 0],
+                              [0, -2, -3]])
 
-        d_correct = np.array([1, -1, 1, -1, -1])
+        d_correct = np.array([1., -1, 1, -1, -1])
         d = kinematics.distance_from_wall(positions, wall_bounds)
         np.testing.assert_array_almost_equal(d, d_correct)
+
+
+class NormTestCase(unittest.TestCase):
+
+    def setUp(self):
+        print("In test '{}'...".format(self._testMethodName))
+
+    def test_example_norm_calculated_and_ints_handled_correctly(self):
+        v = np.array([[1, 1, 1],
+                      [2, 3, 4],
+                      [5, 1, -1]])
+
+        n_correct = np.array([np.sqrt(3), 5.3851648071345037, 5.196152422706632])
+        np.testing.assert_array_almost_equal(n_correct, kinematics.norm(v))
+
+    def test_tiling_works_correctly(self):
+        v = np.random.normal(0, 1, (100, 5))
+
+        self.assertEqual(v.shape, kinematics.norm(v, '2darray').shape)
 
 
 if __name__ == '__main__':
