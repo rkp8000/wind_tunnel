@@ -51,7 +51,7 @@ def clean_traj(traj, cleaning_params):
     return clean_portions[(clean_portions[:, 1] - clean_portions[:, 0]) > min_trajectory_length]
 
 
-def make_basic_trajectory_info(traj):
+def make_trajectory_basic_info(traj):
     """
     Create a model for this trajectory's basic info.
     :param traj: a Trajectory
@@ -77,8 +77,8 @@ def make_basic_trajectory_info(traj):
                                      end_position_x=end_x,
                                      end_position_y=end_y,
                                      end_position_z=end_z,
-                                     dist_from_wall_start=dist_start,
-                                     dist_from_wall_end=dist_end,
+                                     distance_from_wall_start=dist_start,
+                                     distance_from_wall_end=dist_end,
                                      start_datetime=start_datetime,
                                      duration=duration)
 
@@ -108,13 +108,13 @@ def main():
                         stp_id, etp_id = clean_portion
                         # make new trajectory
                         id = traj.id + '_c{}'.format(ctr)
-                        portion_traj = model.Trajectory(id=id,
-                                                        start_timepoint_id=stp_id,
-                                                        end_timepoint_id=etp_id,
-                                                        experiment=expt,
-                                                        raw=False,
-                                                        clean=True,
-                                                        odor_state=expt.odor_state)
+                        portion_traj = models.Trajectory(id=id,
+                                                         start_timepoint_id=stp_id,
+                                                         end_timepoint_id=etp_id,
+                                                         experiment=expt,
+                                                         raw=False,
+                                                         clean=True,
+                                                         odor_state=traj.odor_state)
                     session.add(portion_traj)
                     portion_traj.basic_info = make_trajectory_basic_info(portion_traj)
                     session.add(portion_traj)
