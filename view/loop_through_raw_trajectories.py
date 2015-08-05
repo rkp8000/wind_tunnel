@@ -1,5 +1,5 @@
 """
-Plot trajectories from the raw database and possibly save them in sample database.
+Plot raw trajectories from analysis database.
 """
 from __future__ import print_function, division
 import numpy as np
@@ -54,12 +54,18 @@ for odor_state in ODOR_STATES:
     print('Current odor state: {}'.format(odor_state))
     sample_group = '_'.join([EXPERIMENT_ID, 'odor', odor_state])
 
-    trajs = session.query(models.Trajectory).filter_by(experiment_id=EXPERIMENT_ID, odor_state=odor_state).all()
+    trajs = session.query(models.Trajectory).filter_by(experiment_id=EXPERIMENT_ID,
+                                                       odor_state=odor_state,
+                                                       raw=True).all()
 
     # loop through trajectories
     t_ctr = 0
     n_trajs = len(trajs)
-    keep_going = True
+
+    if trajs:
+        keep_going = True
+    else:
+        keep_going = False
 
     while keep_going:
 
