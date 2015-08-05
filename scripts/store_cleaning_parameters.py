@@ -7,15 +7,15 @@ from db_api import models
 
 FRUIT_FLY_PARAMS = {
                     'speed_threshold': 0.03,  # m/s
-                    'dist_to_wall_threshold': 0.01,  # m
-                    'min_pause_threshold': 10,  # hundredths of a second
+                    'dist_from_wall_threshold': 0.01,  # m
+                    'min_pause_length': 10,  # hundredths of a second
                     'min_trajectory_length': 50,  # hundredths of a second
                     }
 
 MOSQUITO_PARAMS = {
                    'speed_threshold': 0.03,  # m/s
-                   'dist_to_wall_threshold': 0.01,  # m
-                   'min_pause_threshold': 10,  # hundredths of a second
+                   'dist_from_wall_threshold': 0.01,  # m
+                   'min_pause_length': 10,  # hundredths of a second
                    'min_trajectory_length': 50,  # hundredths of a second
                    }
 

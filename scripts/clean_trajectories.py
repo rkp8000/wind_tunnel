@@ -20,9 +20,9 @@ def clean_traj(traj, cleaning_params):
     :param cleaning_params: cleaning parameter dictionary
     :return: list of tuples giving start and end timepoint ids
     """
-    min_speed_threshold = cleaning_params['min_speed_threshold']
-    dist_to_wall_threshold = cleaning_params['dist_to_wall_threshold']
-    min_pause_threshold = cleaning_params['min_pause_threshold']
+    speed_threshold = cleaning_params['speed_threshold']
+    dist_from_wall_threshold = cleaning_params['dist_from_wall_threshold']
+    min_pause_length= cleaning_params['min_pause_length']
     min_trajectory_length = cleaning_params['min_trajectory_length']
 
     # get relevant trajectory information
@@ -31,14 +31,14 @@ def clean_traj(traj, cleaning_params):
     dists_from_wall = traj.distances_from_wall(session)
 
     # get mask of all timepoints below speed and distance from wall threshold
-    paused_mask = (speeds < min_speed_threshold) * (dists_from_wall < dist_to_wall_threshold)
+    paused_mask = (speeds < speed_threshold) * (dists_from_wall < dist_from_wall_threshold)
 
     # get start and end idxs of pauses
     pause_starts, pause_ends = time_series.segment_basic(paused_mask)
 
     # set paused_mask elements to false when pause is below minimum duration
     for pd_ctr, pause_duration in enumerate(pause_ends - pause_starts):
-        if pause_duration < min_pause_threshold:
+        if pause_duration < min_pause_length:
             paused_mask[pause_starts[pd_ctr]:pause_ends[pd_ctr]] = False
 
     # get starts and ends of active portions of trajectories
@@ -88,11 +88,13 @@ def make_basic_trajectory_info(traj):
 def main():
 
     for insect in INSECTS:
-        cleaning_params_queryset = session.query(models.TrajectoryCleaningParameter).filter_by(insect=insect)
-        cleaning_params = dict(cleaning_params_queryset.all())
+        cleaning_params_list = session.query(models.TrajectoryCleaningParameter.param,
+                                             models.TrajectoryCleaningParameter.value).\
+                                             filter_by(insect=insect).all()
+        cleaning_params = dict(cleaning_params_list)
 
         for expt in session.query(models.Experiment).filter_by(insect=insect):
-            for traj in expt.trajs:
+            for traj in expt.trajectories:
 
                 clean_portions = clean_traj(traj, cleaning_params)
 

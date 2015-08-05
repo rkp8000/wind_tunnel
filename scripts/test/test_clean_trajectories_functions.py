@@ -7,9 +7,9 @@ import numpy as np
 from numpy import concatenate as cc
 from scripts import clean_trajectories
 
-CLEANING_PARAMS = {'min_speed_threshold': 0.03,
-                   'dist_to_wall_threshold': 0.01,
-                   'min_pause_threshold': 10,
+CLEANING_PARAMS = {'speed_threshold': 0.03,
+                   'dist_from_wall_threshold': 0.01,
+                   'min_pause_length': 10,
                    'min_trajectory_length': 50}
 
 
