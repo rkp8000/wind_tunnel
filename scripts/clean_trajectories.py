@@ -120,3 +120,7 @@ def main():
                     session.add(portion_traj)
 
                 commit(session)
+
+
+if __name__ == '__main__':
+    main()

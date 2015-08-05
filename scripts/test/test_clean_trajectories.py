@@ -65,4 +65,3 @@ if __name__ == '__main__':
     main()
     print("Running tests...")
     unittest.main()
-    session.rollback()
