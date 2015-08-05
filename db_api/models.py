@@ -7,7 +7,7 @@ from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Boolean, Integer, BigInteger, Float, String, Text, DateTime
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
-
+from connect import engine
 
 Base = declarative_base()
 
@@ -155,7 +155,8 @@ class TrajectoryCleaningParameter(Base):
 
 class TrajectoryBasicInfo(Base):
     __tablename__ = 'trajectory_basic_info'
-    id = Column(Integer, ForeignKey('trajectory.id'), primary_key=True)
+    id = Column(Integer, primary_key=True)
+    trajectory_id = Column(String(100), ForeignKey('trajectory.id'))
     start_position_x = Column(Float)
     start_position_y = Column(Float)
     start_position_z = Column(Float)
@@ -168,3 +169,7 @@ class TrajectoryBasicInfo(Base):
     duration = Column(Float)
 
     trajectory = relationship("Trajectory", backref=backref('basic_info', uselist=False))
+
+
+if __name__ == '__main__':
+    Base.metadata.create_all(engine)
