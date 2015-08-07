@@ -24,7 +24,7 @@ def segment_basic(x, t=None):
     return starts, ends
 
 
-def xcov_multi_with_confidence(xs, ys, lag_forward, lag_backward, confidence=0.95, normed=False):
+def xcov_multi_with_confidence(xs, ys, lag_backward, lag_forward, confidence=0.95, normed=False):
     """
     Calculate cross-covariance between x and y when multiple time-series are available.
         This function is to be used when it is believed that y is created by filtering x

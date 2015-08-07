@@ -68,7 +68,7 @@ class CrossCovarianceTestCase(unittest.TestCase):
 
         xs = [np.random.normal(0, 3, np.random.randint(500, 1000)) for _ in range(100)]
         acov, pv, conf_lb, conf_ub = \
-            time_series.xcov_multi_with_confidence(xs, xs, lag_forward=21, lag_backward=20, normed=True)
+            time_series.xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=True)
 
         self.assertEqual(len(acov), 41)
         self.assertAlmostEqual(acov[:20].mean(), 0, places=2)
@@ -86,9 +86,9 @@ class CrossCovarianceTestCase(unittest.TestCase):
         xs_smooth = [ndimage.gaussian_filter1d(x, 5) for x in xs]
 
         acov, _, _, _ = time_series.\
-            xcov_multi_with_confidence(xs, xs, lag_forward=21, lag_backward=20, normed=True)
+            xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=True)
         acov_smooth, _, lb, ub = time_series.\
-            xcov_multi_with_confidence(xs_smooth, xs_smooth, lag_forward=21, lag_backward=20, normed=True)
+            xcov_multi_with_confidence(xs_smooth, xs_smooth, lag_backward=20, lag_forward=21, normed=True)
 
         for lag in range(2, 11):
             self.assertLess(acov[20 + lag], acov_smooth[20 + lag])
@@ -106,7 +106,7 @@ class CrossCovarianceTestCase(unittest.TestCase):
         xs = [ndimage.gaussian_filter1d(x, 5) for x in xs]
 
         acov, _, _, _ = time_series.\
-            xcov_multi_with_confidence(xs, xs, lag_forward=21, lag_backward=20, normed=False)
+            xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=False)
 
         self.assertAlmostEqual(acov[20], np.var(np.concatenate(xs)), places=5)
 
