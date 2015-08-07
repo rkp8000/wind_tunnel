@@ -19,7 +19,7 @@ class DistributionsTestCase(unittest.TestCase):
             v.append(np.random.normal(1, 2, n))
             n_total += n
 
-        cts, bins = make_distribution(np.concatenate(v), n_bins=20, bounded_by_zero=False)
+        cts, bins = make_distribution(np.concatenate(v), n_bins=20)
 
         self.assertAlmostEqual(cts.sum(), n_total, delta=10)
         self.assertAlmostEqual(bins[0], -9, delta=0.3)
@@ -33,11 +33,25 @@ class DistributionsTestCase(unittest.TestCase):
             v.append(np.random.exponential(2, n))
             n_total += n
 
-        cts, bins = make_distribution(np.concatenate(v), n_bins=20, bounded_by_zero=True)
+        cts, bins = make_distribution(np.concatenate(v), n_bins=20, lb=0)
 
-        self.assertAlmostEqual(cts.sum(), n_total, delta=40)
+        self.assertAlmostEqual(cts.sum(), n_total, delta=45)
         self.assertAlmostEqual(bins[0], 0, places=5)
         self.assertAlmostEqual(bins[-1], 12, delta=0.3)
+
+        # another example bounded
+        v = []
+        n_total = 0
+        for _ in range(20):
+            n = np.random.randint(200, 1000)
+            v.append(np.random.exponential(2, n))
+            n_total += n
+
+        cts, bins = make_distribution(np.concatenate(v), n_bins=20, lb=0, ub=40)
+
+        self.assertAlmostEqual(cts.sum(), n_total, delta=5)
+        self.assertAlmostEqual(bins[0], 0, places=5)
+        self.assertAlmostEqual(bins[-1], 40, places=5)
 
 
 if __name__ == '__main__':
