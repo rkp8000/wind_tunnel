@@ -76,12 +76,8 @@ def main():
 
                 traj_ctr = 0
                 for traj in trajs:
-                    stp_id, etp_id = traj.start_timepoint_id, traj.end_timepoint_id
 
-                    values = list(session.query(getattr(models.Timepoint, variable_name)).
-                        filter(models.Timepoint.id.between(stp_id, etp_id)).all())
-
-                    traj_data.extend(values)
+                    traj_data.extend(traj.timepoint_field(session, variable_name))
 
                     traj_ctr += 1
 
