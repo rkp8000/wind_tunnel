@@ -77,6 +77,13 @@ class Trajectory(Base):
 
         return tps
 
+    def timepoint_field(self, session, field):
+        """Return one field of timepoints associated with this trajectory."""
+        data = session.query(getattr(Timepoint, field)).\
+            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+
+        return np.array(data.all()).flatten()
+
     # original quantities
     def positions(self, session):
         """Get positions associated with this trajectory."""
@@ -238,6 +245,39 @@ class TimepointDistribution(Base, FigureData):
     @property
     def bin_width(self):
         return (self.bin_max - self.bin_min) / self.n_bins
+
+
+class TimepointAutocorrelation(Base, FigureData):
+    __tablename__ = 'timepoint_autocorrelation'
+
+    variable = Column(String(255))
+    experiment_id = Column(String(255), ForeignKey('experiment.id'))
+    odor_state = Column(String(50))
+    n_data_points = Column(BigInteger)
+    n_trajectories = Column(Integer)
+    window_len = Column(Integer)
+
+    experiment = relationship("Experiment", backref='timepoint_autocorrelations')
+
+    @property
+    def time_vector(self):
+        return self.data['time_vector']
+
+    @property
+    def autocorrelation(self):
+        return self.data['autocorrelation']
+
+    @property
+    def p_value(self):
+        return self.data['p_value']
+
+    @property
+    def confidence_lower(self):
+        return self.data['confidence_lower']
+
+    @property
+    def confidence_upper(self):
+        return self.data['confidence_upper']
 
 
 if __name__ == '__main__':
