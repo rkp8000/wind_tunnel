@@ -2,7 +2,9 @@
 Models for wind tunnel analysis database (and test database).
 """
 from __future__ import print_function, division
+import os
 import numpy as np
+import pickle
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Boolean, Integer, BigInteger, Float, String, Text, DateTime
 from sqlalchemy.orm import relationship, backref
@@ -147,6 +149,7 @@ class Trajectory(Base):
 
 class TrajectoryCleaningParameter(Base):
     __tablename__ = 'trajectory_cleaning_parameter'
+
     id = Column(Integer, primary_key=True)
     insect = Column(String(20))
     param = Column(String(30))
@@ -155,6 +158,7 @@ class TrajectoryCleaningParameter(Base):
 
 class TrajectoryBasicInfo(Base):
     __tablename__ = 'trajectory_basic_info'
+
     id = Column(Integer, primary_key=True)
     trajectory_id = Column(String(100), ForeignKey('trajectory.id'))
     start_position_x = Column(Float)
@@ -169,6 +173,71 @@ class TrajectoryBasicInfo(Base):
     duration = Column(Float)
 
     trajectory = relationship("Trajectory", backref=backref('basic_info', uselist=False))
+
+
+class FigureData():
+
+    id = Column(Integer, primary_key=True)
+    figure_root_path_env_var = Column(String(100))
+    directory_path = Column(String(255))
+    file_name = Column(String(255))
+
+    _data = None
+
+    @property
+    def full_path(self):
+        figure_root = os.environ[self.figure_root_path_env_var]
+        return os.path.join(figure_root, self.directory_path, self.file_name)
+
+    @property
+    def data(self):
+        if not self._data:
+            with open(self.full_path, 'rb') as f:
+                self._data = pickle.load(f)
+
+        return self._data
+
+    @data.setter
+    def data(self, data):
+        with open(self.full_path, 'wb') as f:
+            pickle.dump(data, f)
+
+        self._data = data
+
+
+class TimepointDistribution(Base, FigureData):
+    __tablename__ = 'timepoint_distribution'
+
+    variable = Column(String(255))
+    experiment_id = Column(String(255), ForeignKey('experiment.id'))
+    odor_state = Column(String(50))
+    n_data_points = Column(BigInteger)
+    n_trajectories = Column(Integer)
+    bin_min = Column(Float)
+    bin_max = Column(Float)
+    n_bins = Column(Integer)
+
+    experiment = relationship("Experiment", backref='timepoint_distributions')
+
+    @property
+    def cts(self):
+        return self.data['cts']
+
+    @property
+    def cts_normed(self):
+        return self.data['cts'] / self.data['cts'].sum()
+
+    @property
+    def bins(self):
+        return self.data['bins']
+
+    @property
+    def bincs(self):
+        return 0.5 * (self.data['bins'][:-1] + self.data['bins'][1:])
+
+    @property
+    def bin_width(self):
+        return (self.bin_max - self.bin_min) / self.n_bins
 
 
 if __name__ == '__main__':
