@@ -12,7 +12,9 @@ def segment_basic(x, t=None):
     Return the numerical indices indicating the segments of non-False x-values.
     :param x: boolean time-series
     :param t: vector containing indices to use if not 0 to len(x)
-    :return: starts, ends, which are numpy arrays containing the start and end idxs of segments of consecutive Trues
+    :return: starts, ends, which are numpy arrays containing the start and end idxs of
+        segments of consecutive Trues (end idxs are according to Python convention, e.g.,
+        np.array([False, False, False, True, True, False]) yields (array([3]), array([5]))
     """
 
     if t is None:
@@ -22,6 +24,53 @@ def segment_basic(x, t=None):
     ends = t[(np.diff(cc([x, [False]]).astype(int)) == -1).nonzero()[0]] + 1
 
     return starts, ends
+
+
+def segment_by_threshold(x, threshold, t=None):
+    """
+    Segment a 1D time-series by identifying when it crossed a threshold, the times it reached its
+    peak value during each segment in which it was above the threshold, as well as the values reached
+    during those peaks.
+    :param x: signal (1D array)
+    :param threshold: value that signal must be >= for segment to start
+    :param t: optional time indices to return instead of indices from 0 to len(x)
+    :return: segments array, each row containing [start, onset, peak, offset, end] and peaks array,
+        containing values of signals at peaks
+    """
+
+    if t is None:
+        t = np.arange(len(x) + 1, dtype=int)
+
+    # get onsets and offsets of signal going above threshold
+    onsets, offsets = segment_basic(x > threshold)
+
+    if len(onsets) == 0:
+        return np.zeros((0, 5)), np.array([])
+
+    # the last segment's offset is the next segment's start
+    starts = np.array([0] + list(offsets)[:-1])
+    # the next segment's onset is the last segment's end
+    ends = np.array(list(onsets)[1:] + [len(x)])
+
+    # find peak times and peak values
+    peak_times = []
+    peak_values = []
+
+    for onset, offset in zip(onsets, offsets):
+        peak_times.append(onset + np.argmax(x[onset:offset]))
+        peak_values.append(np.max(x[onset:offset]))
+
+    peak_times = np.array(peak_times)
+    peak_values = np.array(peak_values)
+
+    # transform indices to provided time indices
+    starts = t[starts]
+    onsets = t[onsets]
+    peak_times = t[peak_times]
+    offsets = t[offsets]
+    ends = t[ends]
+
+    return np.transpose([starts, onsets, peak_times, offsets, ends]), peak_values
 
 
 def xcov_multi_with_confidence(xs, ys, lag_backward, lag_forward, confidence=0.95, normed=False):

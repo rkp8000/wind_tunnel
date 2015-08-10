@@ -36,7 +36,7 @@ class SegmentingTestCase(unittest.TestCase):
         np.testing.assert_array_equal(starts, starts_correct)
         np.testing.assert_array_equal(ends, ends_correct)
 
-    def test_segment_basic_segments_correctly_with_external_indxs(self):
+    def test_segment_basic_segments_correctly_with_external_idxs(self):
 
         t = np.arange(100, 200)
 
@@ -60,6 +60,91 @@ class SegmentingTestCase(unittest.TestCase):
 
         np.testing.assert_array_equal(starts, starts_correct)
         np.testing.assert_array_equal(ends, ends_correct)
+
+    def test_segment_by_threshold_gives_correct_answer_for_examples(self):
+
+        threshold = 5
+
+        t = np.arange(100, 200)
+        t_extended = np.arange(100, 201)
+
+        # signal with two threshold crossings
+        x = np.random.uniform(0, 2, t.shape)
+        x[10:20] = 10 + np.random.uniform(0, 2, (10,))  # above threshold
+        x[60:75] = 20 + np.random.uniform(0, 2, (15,))  # above threshold
+
+        x[15] = 15  # peak 1
+        x[70] = 25  # peak 2
+
+        # correct solution
+        segments_correct = np.array([[100, 110, 115, 120, 160],
+                                     [120, 160, 170, 175, 200]])
+        peaks_correct = np.array([15., 25])
+
+        segments, peaks = time_series.segment_by_threshold(x, threshold, t=t_extended)
+
+        np.testing.assert_array_equal(segments, segments_correct)
+        np.testing.assert_array_equal(peaks, peaks_correct)
+
+        # signal ending above threshold
+        x = np.random.uniform(0, 2, t.shape)
+        x[10:20] = 10 + np.random.uniform(0, 2, (10,))  # above threshold
+        x[60:] = 20 + np.random.uniform(0, 2, (40,))  # above threshold
+
+        x[15] = 15  # peak 1
+        x[70] = 25  # peak 2
+
+        # correct solution
+        segments_correct = np.array([[100, 110, 115, 120, 160],
+                                     [120, 160, 170, 200, 200]])
+        peaks_correct = np.array([15., 25])
+
+        segments, peaks = time_series.segment_by_threshold(x, threshold, t=t_extended)
+
+        np.testing.assert_array_equal(segments, segments_correct)
+        np.testing.assert_array_equal(peaks, peaks_correct)
+
+        # signal starting above threshold
+        x = np.random.uniform(0, 2, t.shape)
+        x[:20] = 10 + np.random.uniform(0, 2, (20,))  # above threshold
+        x[60:75] = 20 + np.random.uniform(0, 2, (15,))  # above threshold
+
+        x[15] = 15  # peak 1
+        x[70] = 25  # peak 2
+
+        # correct solution
+        segments_correct = np.array([[100, 100, 115, 120, 160],
+                                     [120, 160, 170, 175, 200]])
+        peaks_correct = np.array([15., 25])
+
+        segments, peaks = time_series.segment_by_threshold(x, threshold, t=t_extended)
+
+        np.testing.assert_array_equal(segments, segments_correct)
+        np.testing.assert_array_equal(peaks, peaks_correct)
+
+    def test_segment_by_threshold_gives_correct_answer_for_one_or_zero_threshold_crossings(self):
+
+        threshold = 5
+
+        # no crossings
+        x = np.random.uniform(0, 1, 100)
+
+        segments, peaks = time_series.segment_by_threshold(x, threshold)
+
+        self.assertEqual(segments.shape, (0, 5))
+        self.assertEqual(len(peaks), 0)
+
+        # one crossing
+        x[50:60] = 10
+        x[55] = 15
+
+        segments_correct = np.array([[0, 50, 55, 60, 100]])
+        peaks_correct = np.array([15])
+
+        segments, peaks = time_series.segment_by_threshold(x, threshold)
+
+        np.testing.assert_array_equal(segments, segments_correct)
+        np.testing.assert_array_equal(peaks, peaks_correct)
 
 
 class CrossCovarianceTestCase(unittest.TestCase):
