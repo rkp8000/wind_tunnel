@@ -30,3 +30,21 @@ def pearsonr_with_confidence(x, y, confidence=0.95):
     ub = (np.exp(2*ub_z) - 1) / (np.exp(2*ub_z) + 1)
 
     return rho, p, lb, ub
+
+
+def cov_with_confidence(x, y, confidence=0.95):
+    """
+    Calculate the covariance of two variables, its p-value, and upper and
+        lower 95% confidence bound.
+    :param x: one array
+    :param y: other array
+    :param confidence: how confident the confidence interval
+    """
+
+    cov = np.cov(x, y)[0, 1]
+
+    corr, pv, lb, ub = pearsonr_with_confidence(x, y, confidence)
+
+    scale_factor = cov / corr
+
+    return cov, pv, lb * scale_factor, ub * scale_factor
