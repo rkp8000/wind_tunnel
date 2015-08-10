@@ -63,31 +63,25 @@ def xcov_multi_with_confidence(xs, ys, lag_backward, lag_forward, confidence=0.9
         all_xs = np.concatenate(x_rel)
         all_ys = np.concatenate(y_rel)
 
-        cov = np.cov(all_xs, all_ys)
-        covs += [cov[0, 1]]
+        cov, p_value, lb, ub = stats.cov_with_confidence(all_xs, all_ys, confidence)
 
-        rho, p_value, lb, ub = stats.pearsonr_with_confidence(all_xs, all_ys, confidence)
-
-        p_values += [p_value]
-        lbs += [lb]
-        ubs += [ub]
-
-        if lag == 0:
-            var_x, var_y = cov[0, 0], cov[1, 1]
+        covs.append(cov)
+        p_values.append(p_value)
+        lbs.append(lb)
+        ubs.append(ub)
 
     covs = np.array(covs)
     p_values = np.array(p_values)
     lbs = np.array(lbs)
     ubs = np.array(ubs)
 
-    norm_factor = np.sqrt(var_x * var_y)
-
     if normed:
-        # normalize by mean variance of signals
+        # normalize by average variance of signals
+        var_x = np.cov(np.concatenate(xs), np.concatenate(xs))[0, 0]
+        var_y = np.cov(np.concatenate(ys), np.concatenate(ys))[0, 0]
+        norm_factor = np.sqrt(var_x * var_y)
         covs /= norm_factor
-    else:
-        # convert confidence bounds to covariances
-        lbs *= norm_factor
-        ubs *= norm_factor
+        lbs /= norm_factor
+        ubs /= norm_factor
 
     return covs, p_values, lbs, ubs

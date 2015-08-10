@@ -64,9 +64,13 @@ class SegmentingTestCase(unittest.TestCase):
 
 class CrossCovarianceTestCase(unittest.TestCase):
 
+    def setUp(self):
+        print("In test '{}'...".format(self._testMethodName))
+
     def test_autocovariance_is_delta_function_for_white_noise(self):
 
         xs = [np.random.normal(0, 3, np.random.randint(500, 1000)) for _ in range(100)]
+
         acov, pv, conf_lb, conf_ub = \
             time_series.xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=True)
 
@@ -85,30 +89,41 @@ class CrossCovarianceTestCase(unittest.TestCase):
         xs = [np.random.normal(0, 1, np.random.randint(500, 1000)) for _ in range(100)]
         xs_smooth = [ndimage.gaussian_filter1d(x, 5) for x in xs]
 
-        acov, _, _, _ = time_series.\
+        acov, _, lb, ub = time_series.\
             xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=True)
-        acov_smooth, _, lb, ub = time_series.\
+        acov_smooth, _, lb_smooth, ub_smooth = time_series.\
             xcov_multi_with_confidence(xs_smooth, xs_smooth, lag_backward=20, lag_forward=21, normed=True)
 
-        for lag in range(2, 11):
+        for lag in range(2, 21):
             self.assertLess(acov[20 + lag], acov_smooth[20 + lag])
             self.assertLess(acov[20 + lag], acov_smooth[20 + lag])
             self.assertLess(acov[20 - lag], acov_smooth[20 - lag])
             self.assertLess(acov[20 - lag], acov_smooth[20 - lag])
 
+            self.assertGreater(acov_smooth[20 + lag], lb_smooth[20 + lag])
+            self.assertLess(acov_smooth[20 + lag], ub_smooth[20 + lag])
+            self.assertGreater(acov_smooth[20 - lag], lb_smooth[20 - lag])
+            self.assertLess(acov_smooth[20 - lag], ub_smooth[20 - lag])
+
         np.testing.assert_array_less(lb[:20], ub[:20])
-        self.assertTrue(np.all(lb[:20] > -1))
-        self.assertTrue(np.all(ub[:20] < 1))
+        self.assertTrue(np.all(lb_smooth[:20] > -1))
+        self.assertTrue(np.all(ub_smooth[:20] < 1))
 
     def test_unnormed_autocovariance_gives_variance_at_0_lag(self):
 
         xs = [np.random.normal(0, 1, np.random.randint(500, 1000)) for _ in range(100)]
         xs = [ndimage.gaussian_filter1d(x, 5) for x in xs]
 
-        acov, _, _, _ = time_series.\
+        acov, _, lb, ub = time_series.\
             xcov_multi_with_confidence(xs, xs, lag_backward=20, lag_forward=21, normed=False)
 
         self.assertAlmostEqual(acov[20], np.var(np.concatenate(xs)), places=5)
+
+        for lag in range(2, 21):
+            self.assertGreater(acov[20 + lag], lb[20 + lag])
+            self.assertLess(acov[20 + lag], ub[20 + lag])
+            self.assertGreater(acov[20 - lag], lb[20 - lag])
+            self.assertLess(acov[20 - lag], ub[20 - lag])
 
 
 if __name__ == '__main__':
