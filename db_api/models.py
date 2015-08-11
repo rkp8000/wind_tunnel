@@ -70,6 +70,10 @@ class Trajectory(Base):
 
     experiment = relationship("Experiment", backref='trajectories')
 
+    @property
+    def timepoint_ids_extended(self):
+        return np.arange(self.start_timepoint_id, self.end_timepoint_id + 2)
+
     def timepoints(self, session):
         """Return all timepoints associated with this trajectory."""
         tps = session.query(Timepoint).\
@@ -278,6 +282,47 @@ class TimepointAutocorrelation(Base, FigureData):
     @property
     def confidence_upper(self):
         return self.data['confidence_upper']
+
+
+class Threshold(Base):
+    __tablename__ = 'threshold'
+
+    id = Column(Integer, primary_key=True)
+    experiment_id = Column(String(255), ForeignKey('experiment.id'))
+    determination = Column(String(50))
+    value = Column(Float)
+
+    experiment = relationship("Experiment", backref='thresholds')
+
+
+class CrossingGroup(Base):
+    __tablename__ = 'crossing_group'
+
+    id = Column(String(255), primary_key=True)
+    experiment_id = Column(String(255), ForeignKey('experiment.id'))
+    odor_state = Column(String(50))
+    threshold_id = Column(Integer, ForeignKey('threshold.id'))
+
+    experiment = relationship("Experiment", backref='crossing_groups')
+    threshold = relationship("Threshold", backref='crossing_groups')
+
+
+class Crossing(Base):
+    __tablename__ = 'crossing'
+
+    id = Column(Integer, primary_key=True)
+    start_timepoint_id = Column(BigInteger)
+    entry_timepoint_id = Column(BigInteger)
+    peak_timepoint_id = Column(BigInteger)
+    exit_timepoint_id = Column(BigInteger)
+    end_timepoint_id = Column(BigInteger)
+    max_odor = Column(Float)
+    crossing_number = Column(Integer)
+    trajectory_id = Column(String(100), ForeignKey('trajectory.id'))
+    crossing_group_id = Column(String(255), ForeignKey('crossing_group.id'))
+
+    trajectory = relationship("Trajectory", backref='crossings')
+    crossing_group = relationship("CrossingGroup", backref='crossings')
 
 
 if __name__ == '__main__':
