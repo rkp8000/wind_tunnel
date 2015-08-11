@@ -324,6 +324,33 @@ class Crossing(Base):
     trajectory = relationship("Trajectory", backref='crossings')
     crossing_group = relationship("CrossingGroup", backref='crossings')
 
+    def timepoint_field(self, session, field, first, last, first_rel_to, last_rel_to):
+        """
+        Get a column of timepoints for a specified time.
+        Note: The earliest and latest timepoints that will be returned are those with
+        ids equal to start_timepoint_id, and end_timepoint_id, respectively.
+        :param session: session
+        :param field: what timepoint field you want
+        :param first: how many timepoints after first_rel_to timepoint to get
+        :param last: how many timepoints after last_rel_to timpeoint to get
+        :param first_rel_to: string: 'start', 'entry', 'peak', 'exit', 'end'
+        :param last_rel_to: same options as "first_rel_to"
+        :return: 1D array of timepoints
+        """
+        rel_tos = {'start': self.start_timepoint_id,
+                   'entry': self.entry_timepoint_id,
+                   'peak': self.peak_timepoint_id,
+                   'exit': self.exit_timepoint_id,
+                   'end': self.end_timepoint_id}
+
+        start_tp_id = max(rel_tos[first_rel_to] + first, self.start_timepoint_id)
+        end_tp_id = min(rel_tos[last_rel_to] + last, self.end_timepoint_id)
+
+        data = session.query(getattr(Timepoint, field)).\
+            filter(Timepoint.id.between(start_tp_id, end_tp_id))
+
+        return np.array(data.all()).flatten()
+
 
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
