@@ -92,5 +92,6 @@ class StatsTestCase(unittest.TestCase):
         np.testing.assert_array_almost_equal(scipy.stats.sem(y[:, :-5], axis=1),
                                              stats.nansem(y, axis=1))
 
+
 if __name__ == '__main__':
     unittest.main()
