@@ -5,6 +5,7 @@ from __future__ import print_function, division
 import numpy as np
 import unittest
 import stats
+import scipy.stats
 
 
 class StatsTestCase(unittest.TestCase):
@@ -62,6 +63,34 @@ class StatsTestCase(unittest.TestCase):
 
         self.assertGreater(cov, 1)
 
+    def test_nansem_gives_same_as_scipy_stats_sem(self):
+
+        # 1d array with no nans
+        x = np.random.normal(0, 1, 1000)
+        self.assertAlmostEqual(scipy.stats.sem(x), stats.nansem(x))
+
+        # 1d array with nans
+        x = np.concatenate([x, np.nan * np.ones(100,)])
+        self.assertAlmostEqual(scipy.stats.sem(x[:1000]), stats.nansem(x))
+
+        # 2d array with no nans
+        x = np.random.normal(0, 2, (50, 50))
+        self.assertAlmostEqual(scipy.stats.sem(x, axis=None), stats.nansem(x, axis=None))
+        np.testing.assert_array_almost_equal(scipy.stats.sem(x, axis=0), stats.nansem(x, axis=0))
+        np.testing.assert_array_almost_equal(scipy.stats.sem(x, axis=1), stats.nansem(x, axis=1))
+
+        # 2d array with nans
+        y = x.copy()
+        y[-5:, :] = np.nan
+        self.assertAlmostEqual(scipy.stats.sem(y[:-5, :], axis=None), stats.nansem(y, axis=None))
+        np.testing.assert_array_almost_equal(scipy.stats.sem(y[:-5, :], axis=0),
+                                             stats.nansem(y, axis=0))
+
+        y = x.copy()
+        y[:, -5:] = np.nan
+        self.assertAlmostEqual(scipy.stats.sem(y[:, :-5], axis=None), stats.nansem(y, axis=None))
+        np.testing.assert_array_almost_equal(scipy.stats.sem(y[:, :-5], axis=1),
+                                             stats.nansem(y, axis=1))
 
 if __name__ == '__main__':
     unittest.main()

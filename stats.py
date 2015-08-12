@@ -48,3 +48,17 @@ def cov_with_confidence(x, y, confidence=0.95):
     scale_factor = cov / corr
 
     return cov, pv, lb * scale_factor, ub * scale_factor
+
+
+def nansem(x, axis=None):
+    """
+    Calculate the standard error of the mean ignoring nans.
+    :param x: data array
+    :param axis: what axis to calculate the sem over
+    :return: standard error of the mean
+    """
+
+    std = np.nanstd(x, axis=axis, ddof=1)
+    sqrt_n = np.sqrt((~np.isnan(x)).sum(axis=axis))
+
+    return std / sqrt_n
