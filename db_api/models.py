@@ -352,5 +352,24 @@ class Crossing(Base):
         return np.array(data.all()).flatten()
 
 
+class DiscriminationThreshold(Base):
+    __tablename__ = 'discrimination_threshold'
+
+    id = Column(Integer, primary_key=True)
+    crossing_group_id = Column(String(255), ForeignKey('crossing_group.id'))
+    odor_threshold = Column(Float)
+    n_crossings_below = Column(Integer)
+    n_crossings_above = Column(Integer)
+    time_avg_start = Column(Integer)
+    time_avg_end = Column(Integer)
+    time_avg_rel_to = Column(String(50))
+    variable = Column(String(255))
+    time_avg_difference = Column(Float)
+    lower_bound = Column(Float)
+    upper_bound = Column(Float)
+
+    crossing_group = relationship("CrossingGroup", backref='discrimination_thresholds')
+
+
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
