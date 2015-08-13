@@ -67,6 +67,10 @@ mean_above = np.nanmean(var_array_above, axis=0)
 std_above = np.nanstd(var_array_above, axis=0)
 sem_above = stats.nansem(var_array_above, axis=0)
 
+# zero means around their value at their peaks
+mean_below -= mean_below[-DISPLAY_START]
+mean_above -= mean_above[-DISPLAY_START]
+
 # get integrals
 integral_mean = mean_above[INTEGRAL_START - DISPLAY_START:INTEGRAL_END - DISPLAY_START] - \
     mean_below[INTEGRAL_START - DISPLAY_START:INTEGRAL_END - DISPLAY_START]
