@@ -1,5 +1,5 @@
 """
-Loop through plots of plume crossings.
+Loop through plots of plume crossings, where crossings are determined by arbitrarily low thresholds.
 """
 from __future__ import print_function, division
 import matplotlib.pyplot as plt
