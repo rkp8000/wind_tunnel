@@ -25,7 +25,7 @@ if TEST:
 else:
     print('CONNECTED TO WIND TUNNEL PRODUCTION DATABASE')
 
-    x = raw_input('Are you sure you want to connect to the production database [y or n]?')
+    x = input('Are you sure you want to connect to the production database [y or n]?')
     if x.lower() == 'y':
         engine = create_engine(os.environ['WIND_TUNNEL_DB_CXN_URL'])
     else:
