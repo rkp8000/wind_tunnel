@@ -371,5 +371,33 @@ class DiscriminationThreshold(Base):
     crossing_group = relationship("CrossingGroup", backref='discrimination_thresholds')
 
 
+class CrossingFeatureSetBasic(Base):
+    __tablename__ = 'crossing_feature_set_basic'
+
+    id = Column(Integer, primary_key=True)
+    crossing_id = Column(Integer, ForeignKey('crossing.id'))
+    position_x_entry = Column(Float)
+    position_y_entry = Column(Float)
+    position_z_entry = Column(Float)
+    position_x_peak = Column(Float)
+    position_y_peak = Column(Float)
+    position_z_peak = Column(Float)
+    position_x_exit = Column(Float)
+    position_y_exit = Column(Float)
+    position_z_exit = Column(Float)
+
+    heading_xy_entry = Column(Float)
+    heading_xz_entry = Column(Float)
+    heading_xyz_entry = Column(Float)
+    heading_xy_peak = Column(Float)
+    heading_xz_peak = Column(Float)
+    heading_xyz_peak = Column(Float)
+    heading_xy_exit = Column(Float)
+    heading_xz_exit = Column(Float)
+    heading_xyz_exit = Column(Float)
+
+    crossing = relationship("Crossing", backref=backref('feature_set_basic', uselist=False))
+
+
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
