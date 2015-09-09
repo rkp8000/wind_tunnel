@@ -8,9 +8,9 @@ from db_api import models
 from db_api.connect import session, commit
 import stats
 
-RESPONSE_VAR = 'heading_xyz'
-DISCRIMINATION_THRESHOLD_VALUES = {'fruit_fly': np.exp(np.linspace(np.log(0.2), np.log(100), 10)),
-                                   'mosquito': np.exp(np.linspace(np.log(415), np.log(1000), 10))}
+RESPONSE_VAR = 'velocity_a'
+DISCRIMINATION_THRESHOLD_VALUES = {'fruit_fly': np.exp(np.linspace(np.log(0.5), np.log(300), 80)),
+                                   'mosquito': np.exp(np.linspace(np.log(415), np.log(2000), 80))}
 TIME_AVG_START = 0  # relative to peak (in timepoints, 100/s)
 TIME_AVG_END = 100
 TIME_AVG_REL_TO = 'peak'
@@ -118,3 +118,7 @@ def main():
 
                 session.add(disc_th)
                 commit(session)
+
+
+if __name__ == '__main__':
+    main()
