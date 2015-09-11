@@ -324,7 +324,7 @@ class Crossing(Base):
     trajectory = relationship("Trajectory", backref='crossings')
     crossing_group = relationship("CrossingGroup", backref='crossings')
 
-    def timepoint_field(self, session, field, first, last, first_rel_to, last_rel_to):
+    def timepoint_field(self, session, field, first, last, first_rel_to, last_rel_to, nan_pad=False):
         """
         Get a column of timepoints for a specified time.
         Note: The earliest and latest timepoints that will be returned are those with
@@ -335,6 +335,7 @@ class Crossing(Base):
         :param last: how many timepoints after last_rel_to timpeoint to get
         :param first_rel_to: string: 'start', 'entry', 'peak', 'exit', 'end'
         :param last_rel_to: same options as "first_rel_to"
+        :param nan_pad: whether or not to pad time-series with nans, should the available timepoints be too few
         :return: 1D array of timepoints
         """
         rel_tos = {'start': self.start_timepoint_id,
@@ -346,10 +347,20 @@ class Crossing(Base):
         start_tp_id = max(rel_tos[first_rel_to] + first, self.start_timepoint_id)
         end_tp_id = min(rel_tos[last_rel_to] + last, self.end_timepoint_id)
 
-        data = session.query(getattr(Timepoint, field)).\
-            filter(Timepoint.id.between(start_tp_id, end_tp_id))
+        data = np.array(session.query(getattr(Timepoint, field)).\
+            filter(Timepoint.id.between(start_tp_id, end_tp_id)).all()).flatten()
 
-        return np.array(data.all()).flatten()
+        if nan_pad:
+            diff_start = self.start_timepoint_id - (rel_tos[first_rel_to] + first)
+            diff_end = rel_tos[last_rel_to] + last - self.end_timepoint_id
+
+            if diff_start > 0:
+                data = np.concatenate([np.nan * np.ones((diff_start,)), data])
+
+            if diff_end > 0:
+                data = np.concatenate([data, np.nan * np.ones((diff_end,))])
+
+        return data
 
 
 class DiscriminationThreshold(Base):
