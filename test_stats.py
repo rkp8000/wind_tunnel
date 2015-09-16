@@ -8,6 +8,12 @@ import stats
 import scipy.stats
 
 
+class TruismsTestCase(unittest.TestCase):
+
+    def test_true_is_false(self):
+        self.assertFalse(True)
+
+
 class StatsTestCase(unittest.TestCase):
 
     def test_pearsonr_with_confidence(self):
@@ -44,6 +50,25 @@ class StatsTestCase(unittest.TestCase):
                 self.assertGreater(lb, 0)
             else:
                 self.assertLess(lb, 0)
+
+    def test_pearsonr_partial(self):
+
+        x = np.random.normal(0, 1, 200)
+        z = x + np.random.normal(0, .2, x.shape)
+        y = 3 * z + np.random.normal(0, .1, x.shape)
+
+        rho, p, lb, ub = stats.pearsonr_partial_with_confidence(x, y, [z])
+
+        # find best fit line
+        slope, icpt, _, _, _ = scipy.stats.linregress(z, y)
+        y_prime = y - (slope * z + icpt)
+
+        rho_correct, p_correct, lb_correct, ub_correct = stats.pearsonr_with_confidence(x, y_prime)
+
+        self.assertAlmostEqual(rho, rho_correct)
+        self.assertAlmostEqual(p, p_correct)
+        self.assertAlmostEqual(lb, lb_correct)
+        self.assertAlmostEqual(ub, ub_correct)
 
     def test_cov_with_confidence(self):
         for noise in [0.01, 0.1, 0.2, 0.5, 1, 2, 5, 10]:
