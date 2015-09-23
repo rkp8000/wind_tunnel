@@ -50,7 +50,7 @@ def pearsonr_with_confidence(x, y, confidence=0.95):
 
 def pearsonr_difference_significance(r_1, n_1, r_2, n_2):
     """
-    Calculate the one-tailed p-value that results from comparing two (Pearson) correlation coefficients.
+    Calculate the two-tailed p-value that results from comparing two (Pearson) correlation coefficients.
     Translated into python from code at www.quantpsy.org/corrtest/corrtest.htm.
     :param r_1: first correlation coefficient
     :param n_1: number of data points used to calculate r_1
@@ -63,7 +63,7 @@ def pearsonr_difference_significance(r_1, n_1, r_2, n_2):
     z_2 = 0.5 * (np.log(1 + r_2) - np.log(1 - r_2))
     z = (z_1 - z_2) / np.sqrt((1 / (n_1 - 3)) + 1 / (n_2 - 3))
 
-    return 1 - stats.norm.cdf(np.abs(z))
+    return 2*stats.norm.cdf(-np.abs(z))
 
 
 def pearsonr_partial_with_confidence(x, y, conditioned_on, confidence=0.95):

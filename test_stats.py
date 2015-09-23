@@ -124,10 +124,10 @@ class StatsTestCase(unittest.TestCase):
         n_a = 91
         r_b = 0.0205
         n_b = 63
-        p_1_tailed = 0.01556
+        p = 2*0.01556
 
         self.assertAlmostEqual(
-            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            p, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
             places=3,
         )
 
@@ -135,10 +135,10 @@ class StatsTestCase(unittest.TestCase):
         n_a = 200
         r_b = 0.1
         n_b = 100
-        p_1_tailed = 0.04585
+        p = 2*0.04585
 
         self.assertAlmostEqual(
-            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            p, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
             places=3,
         )
 
@@ -146,10 +146,10 @@ class StatsTestCase(unittest.TestCase):
         n_a = 30
         r_b = -0.3
         n_b = 10
-        p_1_tailed = 0.00276
+        p = 2*0.00276
 
         self.assertAlmostEqual(
-            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            p, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
             places=3,
         )
 
@@ -157,10 +157,10 @@ class StatsTestCase(unittest.TestCase):
         n_a = 20
         r_b = 0.4
         n_b = 4
-        p_1_tailed = 0.30529
+        p = 2*0.30529
 
         self.assertAlmostEqual(
-            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            p, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
             places=3,
         )
 
