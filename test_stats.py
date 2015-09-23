@@ -117,6 +117,53 @@ class StatsTestCase(unittest.TestCase):
         np.testing.assert_array_almost_equal(scipy.stats.sem(y[:, :-5], axis=1),
                                              stats.nansem(y, axis=1))
 
+    def test_pearsonr_difference_significance(self):
+
+        # go through a few examples (calculations done using http://www.quantpsy.org/corrtest/corrtest.htm)
+        r_a = 0.3639
+        n_a = 91
+        r_b = 0.0205
+        n_b = 63
+        p_1_tailed = 0.01556
+
+        self.assertAlmostEqual(
+            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            places=3,
+        )
+
+        r_a = 0.3
+        n_a = 200
+        r_b = 0.1
+        n_b = 100
+        p_1_tailed = 0.04585
+
+        self.assertAlmostEqual(
+            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            places=3,
+        )
+
+        r_a = 0.7
+        n_a = 30
+        r_b = -0.3
+        n_b = 10
+        p_1_tailed = 0.00276
+
+        self.assertAlmostEqual(
+            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            places=3,
+        )
+
+        r_a = -0.1
+        n_a = 20
+        r_b = 0.4
+        n_b = 4
+        p_1_tailed = 0.30529
+
+        self.assertAlmostEqual(
+            p_1_tailed, stats.pearsonr_difference_significance(r_a, n_a, r_b, n_b),
+            places=3,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
