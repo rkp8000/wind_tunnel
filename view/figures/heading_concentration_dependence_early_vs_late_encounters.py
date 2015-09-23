@@ -49,6 +49,8 @@ fig, axs = plt.subplots(
     tight_layout=True
 )
 
+axs_twin = [ax.twinx() for ax in axs[1:]]
+
 wind_speed_handles = []
 wind_speed_labels = []
 
@@ -161,7 +163,22 @@ for expt in session.query(models.Experiment):
             early_late_handles.append(handle)
             early_late_labels.append(label)
 
-    axs[AXES[expt.id]].legend(early_late_handles, early_late_labels)
+            if label == 'early':
+                # store these for later so we can compare them to the lates
+                early_correlations = correlations
+                early_ns = ns
+            elif label == 'late':
+                # calculate significance between early and late correlations
+                p_vals = []
+                for r_1, n_1, r_2, n_2 in zip(early_correlations, early_ns, correlations, ns):
+                    p_vals.append(stats.pearsonr_difference_significance(r_1, n_1, r_2, n_2))
+
+                ax = axs_twin[AXES[expt.id] - 1]
+                ax.plot(t, p_vals, c='k', ls='-', lw=2)
+                ax.axhline(0.05, c='k', ls='--')
+                ax.set_ylim(0, 0.5)
+
+    axs_twin[AXES[expt.id] - 1].legend(early_late_handles, early_late_labels)
 
 axs[0].legend(wind_speed_handles, wind_speed_labels)
 
@@ -171,8 +188,10 @@ for ax, label in zip(axs[1:], wind_speed_labels):
 
 axs[-1].set_xlabel('Time since encounter {} (s)'.format(TRIGGER))
 [ax.set_ylabel('Partial correlation') for ax in axs]
+[ax.set_ylabel('P-value') for ax in axs_twin]
 
 [axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs]
+[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs_twin]
 
 fig.savefig(
     '{}/conc_heading_partial_correlation_triggered_on_{}_hxyz_between_{}_and_{}.png'.
