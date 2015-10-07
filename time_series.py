@@ -3,8 +3,62 @@ Functions for playing with time-serieses.
 """
 from __future__ import print_function, division
 import numpy as np
-from numpy import concatenate as cc
+from scipy import linalg
 import stats
+
+
+cc = np.concatenate
+
+
+class Munger(object):
+    """
+    Class for dealing with time-series data and converting into nice toeplitzy matrices
+    that can be fed directly into fitting algorithms.
+    """
+
+    @staticmethod
+    def roll_into_matrix(ts, window_len):
+        """
+        Create a matrix from a time-series where each row is a window of the time-series.
+
+        :param ts: 1-D array
+        :return: 2-D array
+        """
+        return np.fliplr(linalg.toeplitz(ts, np.zeros((window_len,))))
+
+    def __init__(self):
+        self.delay = None
+        self.basis_in = None
+        self.basis_out = None
+
+    def munge(self, exogs, endog):
+        """
+        Create a feature matrix and response vector from input and output time-series.
+
+        :param exogs: list of time-series exogenous inputs (1-D arrays of equal length)
+        :param endog: 1-D endogenous (output) array
+        :return: feature matrix, response vector
+        """
+        # we can only talk about responses that occur after the delay
+        response_vector = endog[self.delay:]
+
+        feature_matrix = [np.ones((len(response_vector), 1), dtype=float)]
+        for exog, basis in zip(exogs, self.basis_in):
+            if basis is None:
+                feature_matrix.append(exog[:-self.delay][:, None])
+            else:
+                data_matrix = self.roll_into_matrix(exog[:-self.delay], window_len=len(basis))
+                feature_matrix.append(data_matrix.dot(basis))
+
+        if self.basis_out is None:
+            feature_matrix.append(endog[:-self.delay][:, None])
+        else:
+            data_matrix = self.roll_into_matrix(endog[:-self.delay], window_len=len(self.basis_out))
+            feature_matrix.append(data_matrix.dot(self.basis_out))
+
+        feature_matrix = cc(feature_matrix, axis=1)
+
+        return feature_matrix, response_vector
 
 
 def segment_basic(x, t=None):

@@ -211,5 +211,85 @@ class CrossCovarianceTestCase(unittest.TestCase):
             self.assertLess(acov[20 - lag], ub[20 - lag])
 
 
+class TimeSeriesMungerTestCase(unittest.TestCase):
+
+    def test_feature_matrix_correctly_formed_with_basis_functions(self):
+        # three features, 1 output
+        x1 = np.random.normal(0, 10, (100,))
+        x2 = np.random.normal(0, 10, (100,))
+        x3 = np.random.normal(0, 10, (100,))
+        y = np.random.normal(0, 10, (100,))
+
+        tsm = time_series.Munger()
+        tsm.delay = 10  # we will assume there is a 10 timestep delay between input and response
+
+        # we will assume x1 is used directly and x2, x3, and y are filtered, and that their
+        # filters are represented by sums of sinusoidal basis functions
+        # (the details don't matter as we're just making sure all the arrays are getting
+        # rearranged correctly)
+        t = np.linspace(0, np.pi, 20)
+        sin_basis = np.transpose([np.sin(t), np.sin(2*t), np.sin(3*t), np.sin(4*t)])
+        t_short = t[:10]
+        sin_basis_short = np.transpose([np.sin(t_short), np.sin(2*t_short)])
+        tsm.basis_in = [None, sin_basis, sin_basis]
+        tsm.basis_out = sin_basis_short
+
+        feature_matrix, response_vector = tsm.munge([x1, x2, x3], y)
+
+        # make sure the arrays are the correct shape
+        self.assertEqual(len(response_vector), 90)
+        self.assertEqual(feature_matrix.shape[0], 90)
+        self.assertEqual(feature_matrix.shape[1], 12)
+
+        # make sure the constants and x1 terms are in the correct places (check 1st, 2nd, last)
+        self.assertAlmostEqual(feature_matrix[0, 0], 1)
+        self.assertAlmostEqual(feature_matrix[1, 0], 1)
+        self.assertAlmostEqual(feature_matrix[-1, 0], 1)
+        self.assertAlmostEqual(feature_matrix[0, 1], x1[0])
+        self.assertAlmostEqual(feature_matrix[1, 1], x1[1])
+        self.assertAlmostEqual(feature_matrix[-1, 1], x1[89])
+
+        # make sure the rest of the features correspond to the projections of x2, x3, and y
+        # onto their appropriate basis functions
+        np.testing.assert_array_almost_equal(
+            feature_matrix[19, 2:6],
+            x2[:20][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[19, 6:10],
+            x3[:20][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[9, 10:12],
+            y[:10][None, :].dot(sin_basis_short).flatten()
+        )
+
+        np.testing.assert_array_almost_equal(
+            feature_matrix[20, 2:6],
+            x2[1:21][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[20, 6:10],
+            x3[1:21][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[10, 10:12],
+            y[1:11][None, :].dot(sin_basis_short).flatten()
+        )
+
+        np.testing.assert_array_almost_equal(
+            feature_matrix[-1, 2:6],
+            x2[70:90][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[-1, 6:10],
+            x3[70:90][None, :].dot(sin_basis).flatten()
+        )
+        np.testing.assert_array_almost_equal(
+            feature_matrix[-1, 10:12],
+            y[80:90][None, :].dot(sin_basis_short).flatten()
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
