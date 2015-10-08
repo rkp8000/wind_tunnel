@@ -2,10 +2,16 @@
 Unit tests for time-series module.
 """
 from __future__ import print_function, division
-import unittest
+import matplotlib.pyplot as plt
 import numpy as np
-import time_series
+import os
 from scipy import ndimage
+import statsmodels.api as sm
+import unittest
+
+import time_series
+
+FIGURE_SAVE_DIR = '/Users/rkp/Desktop'
 
 
 class SegmentingTestCase(unittest.TestCase):
@@ -253,41 +259,41 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         # onto their appropriate basis functions
         np.testing.assert_array_almost_equal(
             feature_matrix[19, 2:6],
-            x2[:20][None, :].dot(sin_basis).flatten()
+            x2[:20][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[19, 6:10],
-            x3[:20][None, :].dot(sin_basis).flatten()
+            x3[:20][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[9, 10:12],
-            y[:10][None, :].dot(sin_basis_short).flatten()
+            y[:10][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
         np.testing.assert_array_almost_equal(
             feature_matrix[20, 2:6],
-            x2[1:21][None, :].dot(sin_basis).flatten()
+            x2[1:21][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[20, 6:10],
-            x3[1:21][None, :].dot(sin_basis).flatten()
+            x3[1:21][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[10, 10:12],
-            y[1:11][None, :].dot(sin_basis_short).flatten()
+            y[1:11][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 2:6],
-            x2[70:90][None, :].dot(sin_basis).flatten()
+            x2[70:90][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 6:10],
-            x3[70:90][None, :].dot(sin_basis).flatten()
+            x3[70:90][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 10:12],
-            y[80:90][None, :].dot(sin_basis_short).flatten()
+            y[80:90][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
     def test_feature_matrix_correctly_formed_with_basis_functions_with_nonzero_start(self):
@@ -330,41 +336,41 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         # onto their appropriate basis functions
         np.testing.assert_array_almost_equal(
             feature_matrix[14, 2:6],
-            x2[:20][None, :].dot(sin_basis).flatten()
+            x2[:20][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[14, 6:10],
-            x3[:20][None, :].dot(sin_basis).flatten()
+            x3[:20][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[4, 10:12],
-            y[:10][None, :].dot(sin_basis_short).flatten()
+            y[:10][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
         np.testing.assert_array_almost_equal(
             feature_matrix[15, 2:6],
-            x2[1:21][None, :].dot(sin_basis).flatten()
+            x2[1:21][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[15, 6:10],
-            x3[1:21][None, :].dot(sin_basis).flatten()
+            x3[1:21][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[5, 10:12],
-            y[1:11][None, :].dot(sin_basis_short).flatten()
+            y[1:11][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 2:6],
-            x2[70:90][None, :].dot(sin_basis).flatten()
+            x2[70:90][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 6:10],
-            x3[70:90][None, :].dot(sin_basis).flatten()
+            x3[70:90][None, :].dot(sin_basis[::-1]).flatten()
         )
         np.testing.assert_array_almost_equal(
             feature_matrix[-1, 10:12],
-            y[80:90][None, :].dot(sin_basis_short).flatten()
+            y[80:90][None, :].dot(sin_basis_short[::-1]).flatten()
         )
 
     def test_orthogonalization_of_nonorthogonal_basis_functions(self):
@@ -399,6 +405,135 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         self.assertAlmostEqual(tsm.basis_out[:, 2].dot(tsm.basis_out[:, 3]), 0)
         self.assertAlmostEqual(tsm.basis_out[:, 2].dot(tsm.basis_out[:, 4]), 0)
         self.assertAlmostEqual(tsm.basis_out[:, 3].dot(tsm.basis_out[:, 4]), 0)
+
+    def test_putting_filters_back_together_from_fitted_basis_function_coefficients(self):
+        """
+        Make sure we can properly put filters back together if we have found their coefficients.
+        """
+        cc = np.concatenate
+
+        tsm = time_series.Munger()
+        tsm.delay = 10  # we will assume there is a 10 timestep delay between input and response
+
+        # we will assume x1 is used directly and x2, x3, and y are filtered, and that their
+        # filters are represented by sums of sinusoidal basis functions
+        # (the details don't matter as we're just making sure all the arrays are getting
+        # rearranged correctly)
+        t = np.linspace(0, np.pi, 20)
+        sin_basis = np.transpose([np.sin(t), np.sin(2*t), np.sin(3*t), np.sin(4*t)])
+        t_short = t[:10]
+        sin_basis_short = np.transpose([np.sin(t_short), np.sin(2*t_short)])
+        tsm.basis_in = [None, sin_basis, sin_basis]
+        tsm.basis_out = sin_basis_short
+
+        coeffs = cc([[-1.], [.3], [1, 2, 3, 4], [5, 6, 7, 8], [-3, -4]])
+        constant, in_filters, out_filter = tsm.filters_from_coeffs(coeffs)
+
+        self.assertAlmostEqual(constant, coeffs[0])
+        self.assertAlmostEqual(in_filters[0], coeffs[1])
+        np.testing.assert_array_almost_equal(in_filters[1], sin_basis.dot(coeffs[2:6]))
+        np.testing.assert_array_almost_equal(in_filters[2], sin_basis.dot(coeffs[6:10]))
+        np.testing.assert_array_almost_equal(out_filter, sin_basis_short.dot(coeffs[10:12]))
+
+    def test_actual_fitting_of_filters_using_munger(self):
+        """
+        Create an output time-series by filtering and combining two input time-series and make sure that
+        statsmodels can properly recover the filters given the munged data.
+        """
+        T = 500
+        NOISE = 0.01
+        SCALING = 0.01
+        DELAY = 5
+        cc = np.concatenate
+
+        in_1 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
+        in_2 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
+
+        c = -0.4
+        t = np.linspace(0, np.pi, 30)
+        b_1 = np.sin(t)
+        b_2 = np.sin(2*t)
+        b_3 = np.sin(3*t)
+
+        b = np.array([b_1, b_2, b_3]).T
+
+        f_in_1 = b.dot(SCALING*np.array([1, 1, 3])[:, None])
+        f_in_2 = b.dot(SCALING*np.array([-1, 3, -1])[:, None])
+        f_out = b.dot(SCALING*np.array([.5, 4, -.1])[:, None])
+
+        # create filtered output stimulus
+        out = np.zeros((T,), dtype=float)
+        L = len(f_out)  # filter length
+
+        # go through each timestep from delay to end (zero padding early ones) and compute output
+        # based on filtered input and filtered history
+        for ts in range(DELAY, T):
+            if ts < DELAY + L:
+                in_1_subset = cc([np.zeros((L - ts + DELAY - 1,), dtype=float), in_1[:ts - DELAY + 1]])
+                in_2_subset = cc([np.zeros((L - ts + DELAY - 1,), dtype=float), in_2[:ts - DELAY + 1]])
+                out_subset = cc([np.zeros((L - ts + DELAY - 1,), dtype=float), out[:ts - DELAY + 1]])
+            else:
+                in_1_subset = in_1[ts - DELAY + 1 - L:ts - DELAY + 1]
+                in_2_subset = in_2[ts - DELAY + 1 - L:ts - DELAY + 1]
+                out_subset = out[ts - DELAY + 1 - L:ts - DELAY + 1]
+
+            out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + out_subset.dot(f_out[::-1]) + c
+            out[ts] += np.random.normal(0, NOISE)
+
+        # munge time-series data so we can pass it to statsmodels glm fitter
+        tsm = time_series.Munger()
+        tsm.delay = DELAY
+        tsm.basis_in = [b, b]
+        tsm.basis_out = b
+        tsm.orthogonalize_basis()
+        feature_matrix, response_vector = tsm.munge([in_1, in_2], out, start=L)
+
+        # make sure the shapes are correct (for good luck!)
+        self.assertEqual(feature_matrix.shape[0], T - L - DELAY)
+        self.assertEqual(feature_matrix.shape[1], 10)
+        self.assertEqual(len(response_vector), T - L - DELAY)
+
+        # fit an ordinary least squares model with statsmodels
+        link_function = sm.genmod.families.links.identity
+        family = sm.families.Gaussian(link=link_function)
+        model = sm.GLM(endog=response_vector, exog=feature_matrix, family=family)
+        results = model.fit()
+
+        # reconstruct filters from coefficients
+        constant, in_filters, out_filter = tsm.filters_from_coeffs(results.params)
+
+        print('True constant: {}'.format(c))
+        print('Recovered constant: {}'.format(constant))
+
+        # make figure to output test results
+        fig = plt.figure(figsize=(10, 5), tight_layout=True)
+        ax_ts = fig.add_subplot(2, 1, 1)
+        ax_filts = [fig.add_subplot(2, 2, 3), fig.add_subplot(2, 2, 4)]
+
+        ax_ts.plot(np.transpose([in_1, in_2, out]))
+        ax_ts.set_xlabel('t')
+        ax_ts.set_ylabel('input and output')
+
+        ax_filts[0].plot(t, f_in_1, 'b')
+        ax_filts[0].plot(t, f_in_2, 'g')
+        ax_filts[0].plot(t, f_out, 'r')
+        ax_filts[0].set_xlim(t[0], t[-1])
+        ax_filts[0].set_xlabel('t')
+        ax_filts[0].set_ylabel('filter strength')
+        ax_filts[0].set_title('true filters')
+
+        ax_filts[1].plot(t, in_filters[0], 'b')
+        ax_filts[1].plot(t, in_filters[1], 'g')
+        ax_filts[1].plot(t, out_filter, 'r')
+        ax_filts[1].set_xlim(t[0], t[-1])
+        ax_filts[1].set_xlabel('t')
+        ax_filts[1].set_ylabel('filter strength')
+        ax_filts[1].set_title('recovered filters')
+
+        SAVE_PATH = os.path.join(FIGURE_SAVE_DIR, 'test_actual_fitting_of_filters_using_munger.png')
+        fig.savefig(os.path.join(SAVE_PATH))
+
+        print('Figure saved at {}'.format(SAVE_PATH))
 
 
 if __name__ == '__main__':
