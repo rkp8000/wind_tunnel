@@ -69,7 +69,7 @@ class Munger(object):
         :return: feature matrix, response vector
         """
         # we can only talk about responses that occur after the delay
-        response_vector = endog[ self.delay:]
+        response_vector = endog[self.delay:]
 
         feature_matrix = [np.ones((len(response_vector), 1), dtype=float)]
         for exog, basis in zip(exogs, self.basis_in):
@@ -77,13 +77,16 @@ class Munger(object):
                 feature_matrix.append(exog[:-self.delay][:, None])
             else:
                 data_matrix = self.roll_into_matrix(exog[:-self.delay], window_len=len(basis))
-                feature_matrix.append(data_matrix.dot(basis))
+                # note that we reverse the order each basis function's elements since the basis functions
+                # are initially passed in with "into the past" going to the right (i.e., as filters are normally shown,
+                # since they are flipped before doing a convolution
+                feature_matrix.append(data_matrix.dot(basis[::-1]))
 
         if self.basis_out is None:
             feature_matrix.append(endog[:-self.delay][:, None])
         else:
             data_matrix = self.roll_into_matrix(endog[:-self.delay], window_len=len(self.basis_out))
-            feature_matrix.append(data_matrix.dot(self.basis_out))
+            feature_matrix.append(data_matrix.dot(self.basis_out[::-1]))
 
         feature_matrix = cc(feature_matrix, axis=1)
 
@@ -97,7 +100,23 @@ class Munger(object):
             response data)
         :return: filter that is the weighted sum of orthogonalized basis functions
         """
-        pass
+        constant = coeffs[0]
+        ctr = 1
+        in_filters = []
+        for basis in self.basis_in:
+            if basis is None:
+                in_filters.append(coeffs[ctr])
+                ctr += 1
+            else:
+                in_filters.append(basis.dot(coeffs[ctr:ctr + basis.shape[1]]))
+                ctr += basis.shape[1]
+        if self.basis_out is None:
+            out_filter = coeffs[ctr]
+        else:
+            out_filter = self.basis_out.dot(coeffs[ctr:ctr + self.basis_out.shape[1]])
+
+        return constant, in_filters, out_filter
+
 
 
 def segment_basic(x, t=None):
