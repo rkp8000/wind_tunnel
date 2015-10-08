@@ -441,7 +441,7 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         statsmodels can properly recover the filters given the munged data.
         """
         T = 500
-        NOISE = 0.01
+        NOISE = 0.1
         SCALING = 0.01
         DELAY = 5
         cc = np.concatenate
@@ -452,8 +452,8 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         c = -0.4
         t = np.linspace(0, np.pi, 30)
         b_1 = np.sin(t)
-        b_2 = np.sin(2*t)
-        b_3 = np.sin(3*t)
+        b_2 = np.sin(2.5*t)
+        b_3 = np.sin(5.3*t)
 
         b = np.array([b_1, b_2, b_3]).T
 
@@ -531,7 +531,7 @@ class TimeSeriesMungerTestCase(unittest.TestCase):
         ax_filts[1].set_title('recovered filters')
 
         SAVE_PATH = os.path.join(FIGURE_SAVE_DIR, 'test_actual_fitting_of_filters_using_munger.png')
-        fig.savefig(os.path.join(SAVE_PATH))
+        fig.savefig(SAVE_PATH)
 
         print('Figure saved at {}'.format(SAVE_PATH))
 

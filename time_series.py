@@ -118,7 +118,6 @@ class Munger(object):
         return constant, in_filters, out_filter
 
 
-
 def segment_basic(x, t=None):
     """
     Return the numerical indices indicating the segments of non-False x-values.
