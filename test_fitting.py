@@ -141,13 +141,16 @@ class ModelComparisonTestCase(unittest.TestCase):
         DELAY = 5
         cc = np.concatenate
 
+        confound_1 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 7)
         in_11 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
         in_12 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
 
+        confound_2 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 7)
         in_21 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
         in_22 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
 
         c = -0.4
+        c_confound = 0.2
         t = np.linspace(0, 100)
         b_1 = np.exp(-t/5)/5
         b_2 = np.exp(-t/10)/10
@@ -182,7 +185,7 @@ class ModelComparisonTestCase(unittest.TestCase):
                 out_subset = out_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
 
             out_1[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
-                        out_subset.dot(f_out[::-1]) + c + np.random.normal(0, NOISE)
+                out_subset.dot(f_out[::-1]) + c + c_confound * confound_1[ts - DELAY] + np.random.normal(0, NOISE)
 
         for ts in range(DELAY, T):
             if ts < DELAY + f_len:
@@ -195,20 +198,20 @@ class ModelComparisonTestCase(unittest.TestCase):
                 out_subset = out_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
 
             out_2[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
-                        out_subset.dot(f_out[::-1]) + c + np.random.normal(0, NOISE)
+                out_subset.dot(f_out[::-1]) + c + c_confound * confound_2[ts - DELAY] + np.random.normal(0, NOISE)
 
         # munge time-series data so we can pass it to statsmodels glm fitter
         b_short = b[:30, :3]
         tsm = time_series.Munger()
         tsm.delay = DELAY
-        tsm.basis_in = [b_short, b_short]
+        tsm.basis_in = [None, b_short, b_short]
         tsm.basis_out = b_short
         tsm.orthogonalize_basis()
-        feature_matrix_1, response_vector_1 = tsm.munge([in_11, in_12], out_1, start=f_len)
+        feature_matrix_1, response_vector_1 = tsm.munge([confound_1, in_11, in_12], out_1, start=f_len)
 
         # make sure the shapes are correct (for good luck!)
         self.assertEqual(feature_matrix_1.shape[0], T - f_len - DELAY)
-        self.assertEqual(feature_matrix_1.shape[1], 10)
+        self.assertEqual(feature_matrix_1.shape[1], 11)
         self.assertEqual(len(response_vector_1), T - f_len - DELAY)
 
         # fit an ordinary least squares model with statsmodels
@@ -217,7 +220,7 @@ class ModelComparisonTestCase(unittest.TestCase):
         model = sm.GLM(endog=response_vector_1, exog=feature_matrix_1, family=family)
         results = model.fit()
         prediction_1 = model.predict(results.params, exog=feature_matrix_1)
-        feature_matrix_2, response_vector_2 = tsm.munge([in_21, in_22], out_2, start=f_len)
+        feature_matrix_2, response_vector_2 = tsm.munge([confound_2, in_21, in_22], out_2, start=f_len)
         prediction_2 = model.predict(results.params, exog=feature_matrix_2)
 
         # reconstruct filters from coefficients
@@ -226,14 +229,14 @@ class ModelComparisonTestCase(unittest.TestCase):
         # do the same fit except with the full basis function set
         tsm = time_series.Munger()
         tsm.delay = DELAY
-        tsm.basis_in = [b, b]
+        tsm.basis_in = [None, b, b]
         tsm.basis_out = b
         tsm.orthogonalize_basis()
-        feature_matrix_1, response_vector_1 = tsm.munge([in_11, in_12], out_1, start=f_len)
+        feature_matrix_1, response_vector_1 = tsm.munge([confound_1, in_11, in_12], out_1, start=f_len)
 
         # make sure the shapes are correct (for good luck!)
         self.assertEqual(feature_matrix_1.shape[0], T - f_len - DELAY)
-        self.assertEqual(feature_matrix_1.shape[1], 19)
+        self.assertEqual(feature_matrix_1.shape[1], 20)
         self.assertEqual(len(response_vector_1), T - f_len - DELAY)
 
         # fit an ordinary least squares model with statsmodels
@@ -245,7 +248,7 @@ class ModelComparisonTestCase(unittest.TestCase):
         # reconstruct filters from coefficients
         constant_full, in_filters_full, out_filter_full = tsm.filters_from_coeffs(results_full.params)
 
-        feature_matrix_2_full, response_vector_2_full = tsm.munge([in_21, in_22], out_2, start=f_len)
+        feature_matrix_2_full, response_vector_2_full = tsm.munge([confound_2, in_21, in_22], out_2, start=f_len)
         prediction_2_full = model_full.predict(results_full.params, exog=feature_matrix_2_full)
 
         self.assertEqual(len(prediction_2), len(prediction_2_full))
@@ -272,11 +275,13 @@ class ModelComparisonTestCase(unittest.TestCase):
         ax_ts_0.plot(np.arange(T)[-len(prediction_1):], prediction_1, 'r--')
         ax_ts_0.set_xlabel('t')
         ax_ts_0.set_ylabel('input and output')
+        ax_ts_0.set_title('training time series')
 
         ax_ts_1.plot(np.transpose([in_21, in_22, out_2]))
         ax_ts_1.plot(np.arange(T)[-len(prediction_2):], prediction_2, 'r--')
         ax_ts_1.set_xlabel('t')
         ax_ts_1.set_ylabel('input and output')
+        ax_ts_1.set_title('test time series')
 
         ax_resid.plot(np.arange(T)[-len(prediction_2):], resid_test, 'k--')
         ax_resid.plot(np.arange(T)[-len(prediction_2):], resid_test_full, 'k')
@@ -292,11 +297,11 @@ class ModelComparisonTestCase(unittest.TestCase):
         ax_filts[0].set_ylabel('filter strength')
         ax_filts[0].set_title('true filters')
 
-        ax_filts[1].plot(t[:30], in_filters[0], 'b--')
-        ax_filts[1].plot(t[:30], in_filters[1], 'g--')
+        ax_filts[1].plot(t[:30], in_filters[1], 'b--')
+        ax_filts[1].plot(t[:30], in_filters[2], 'g--')
         ax_filts[1].plot(t[:30], out_filter, 'r--')
-        ax_filts[1].plot(t, in_filters_full[0], 'b')
-        ax_filts[1].plot(t, in_filters_full[1], 'g')
+        ax_filts[1].plot(t, in_filters_full[1], 'b')
+        ax_filts[1].plot(t, in_filters_full[2], 'g')
         ax_filts[1].plot(t, out_filter_full, 'r')
         ax_filts[1].set_xlim(t[0], t[-1])
         ax_filts[1].set_xlabel('t')
