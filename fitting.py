@@ -72,7 +72,7 @@ class GLMFitter(object):
         if data is None:
             feature_matrix = self.feature_matrix
         else:
-            feature_matrix = self.make_feature_matrix_and_response_vector(data, start)
+            feature_matrix, _ = self.make_feature_matrix_and_response_vector(data, start)
 
         return self.model.predict(self.results.params, exog=feature_matrix)
 
