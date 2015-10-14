@@ -9,124 +9,13 @@ from scipy import ndimage
 import statsmodels.api as sm
 import unittest
 
+import fitting
 import time_series
 
 FIGURE_SAVE_DIR = '/Users/rkp/Desktop'
 
 
 class ModelComparisonTestCase(unittest.TestCase):
-
-    def test_recovery_of_filters_from_basic_ARMA_fit(self):
-        """
-        Here we create an output that is a filtered version of an input that uses filters at two time-scales.
-        We show that when filters at only one time-scale are allowed to be fit, the prediction error is worse
-        than when filters are allowed to be of the longer time-scale.
-        """
-        # make our signals
-        T = 500
-        NOISE = 0.05
-        SCALING = 0.2
-        DELAY = 5
-        cc = np.concatenate
-
-        in_1 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
-        in_2 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
-
-        c = -0.4
-        t = np.linspace(0, 100)
-        b_1 = np.exp(-t/5)/5
-        b_2 = np.exp(-t/10)/10
-        b_3 = np.exp(-t/15)/15
-        b_4 = np.exp(-t/50)/50
-        b_5 = np.exp(-t/60)/60
-        b_6 = np.exp(-t/70)/70
-
-        b = np.array([b_1, b_2, b_3, b_4, b_5, b_6]).T
-
-        f_in_1 = b.dot(SCALING*np.array([1, 1, 3, 0, 20, 0])[:, None])
-        f_in_2 = b.dot(SCALING*np.array([-1, 3, -1, 0, 20, 0])[:, None])
-        f_out = b.dot(SCALING*np.array([.5, 4, -.1, 0, 0, 0])[:, None])
-
-        # create filtered output stimulus
-        out = np.zeros((T,), dtype=float)
-        f_len = len(f_out)  # filter length
-
-        # go through each timestep from delay to end (zero padding early ones) and compute output
-        # based on filtered input and filtered history
-        for ts in range(DELAY, T):
-            if ts < DELAY + f_len:
-                in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_1[:ts - DELAY + 1]])
-                in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_2[:ts - DELAY + 1]])
-                out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out[:ts - DELAY + 1]])
-            else:
-                in_1_subset = in_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                in_2_subset = in_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                out_subset = out[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-
-            out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + out_subset.dot(f_out[::-1]) + c
-            out[ts] += np.random.normal(0, NOISE)
-
-        # munge time-series data so we can pass it to statsmodels glm fitter
-        tsm = time_series.Munger()
-        tsm.delay = DELAY
-        tsm.basis_in = [b, b]
-        tsm.basis_out = b
-        tsm.orthogonalize_basis()
-        feature_matrix, response_vector = tsm.munge([in_1, in_2], out, start=f_len)
-
-        # make sure the shapes are correct (for good luck!)
-        self.assertEqual(feature_matrix.shape[0], T - f_len - DELAY)
-        self.assertEqual(feature_matrix.shape[1], 19)
-        self.assertEqual(len(response_vector), T - f_len - DELAY)
-
-        # fit an ordinary least squares model with statsmodels
-        link_function = sm.genmod.families.links.identity
-        family = sm.families.Gaussian(link=link_function)
-        model = sm.GLM(endog=response_vector, exog=feature_matrix, family=family)
-        results = model.fit()
-        prediction = model.predict(results.params, exog=feature_matrix)
-
-        # reconstruct filters from coefficients
-        constant, in_filters, out_filter = tsm.filters_from_coeffs(results.params)
-
-        print('True constant: {}'.format(c))
-        print('Recovered constant: {}'.format(constant))
-
-        # make figure to output test results
-        fig = plt.figure(figsize=(10, 5), tight_layout=True)
-        ax_ts = fig.add_subplot(2, 1, 1)
-        ax_filt_0 = fig.add_subplot(2, 2, 3)
-        ax_filt_1 = fig.add_subplot(2, 2, 4, sharey=ax_filt_0)
-        ax_filts = [ax_filt_0, ax_filt_1]
-
-        ax_ts.plot(np.transpose([in_1, in_2, out]))
-        ax_ts.plot(np.arange(T)[-len(prediction):], prediction, 'r--')
-        ax_ts.set_xlabel('t')
-        ax_ts.set_ylabel('input and output')
-
-        ax_filts[0].plot(t, f_in_1, 'b')
-        ax_filts[0].plot(t, f_in_2, 'g')
-        ax_filts[0].plot(t, f_out, 'r')
-        ax_filts[0].set_xlim(t[0], t[-1])
-        ax_filts[0].set_xlabel('t')
-        ax_filts[0].set_ylabel('filter strength')
-        ax_filts[0].set_title('true filters')
-
-        ax_filts[1].plot(t, in_filters[0], 'b')
-        ax_filts[1].plot(t, in_filters[1], 'g')
-        ax_filts[1].plot(t, out_filter, 'r')
-        ax_filts[1].set_xlim(t[0], t[-1])
-        ax_filts[1].set_xlabel('t')
-        ax_filts[1].set_ylabel('filter strength')
-        ax_filts[1].set_title('recovered filters')
-
-        SAVE_PATH = os.path.join(
-            FIGURE_SAVE_DIR,
-            'test_recovery_of_filters_from_basic_ARMA_fit.png'
-        )
-        fig.savefig(SAVE_PATH)
-
-        print('Figure saved at {}'.format(SAVE_PATH))
 
     def test_prediction_error_decreases_when_filters_are_allowed_to_take_on_proper_timescale(self):
         """
@@ -311,6 +200,109 @@ class ModelComparisonTestCase(unittest.TestCase):
         SAVE_PATH = os.path.join(
             FIGURE_SAVE_DIR,
             'test_prediction_error_decreases_when_filters_are_allowed_to_take_on_proper_timescale.png'
+        )
+        fig.savefig(SAVE_PATH)
+
+        print('Figure saved at {}'.format(SAVE_PATH))
+
+
+class GLMFitter(unittest.TestCase):
+
+    def test_recovery_of_filters_from_basic_ARMA_fit(self):
+        """
+        Here we create an output that is a filtered version of an input that uses filters at two time-scales.
+        We show that when filters at only one time-scale are allowed to be fit, the prediction error is worse
+        than when filters are allowed to be of the longer time-scale.
+        """
+        # make our signals
+        T = 500
+        NOISE = 0.05
+        SCALING = 0.2
+        DELAY = 5
+        cc = np.concatenate
+
+        in_1 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
+        in_2 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
+
+        c = -0.4
+        t = np.linspace(0, 100)
+        b_1 = np.exp(-t/5)/5
+        b_2 = np.exp(-t/10)/10
+        b_3 = np.exp(-t/15)/15
+        b_4 = np.exp(-t/50)/50
+        b_5 = np.exp(-t/60)/60
+        b_6 = np.exp(-t/70)/70
+
+        b = np.array([b_1, b_2, b_3, b_4, b_5, b_6]).T
+
+        f_in_1 = b.dot(SCALING*np.array([1, 1, 3, 0, 20, 0])[:, None])
+        f_in_2 = b.dot(SCALING*np.array([-1, 3, -1, 0, 20, 0])[:, None])
+        f_out = b.dot(SCALING*np.array([.5, 4, -.1, 0, 0, 0])[:, None])
+
+        # create filtered output stimulus
+        out = np.zeros((T,), dtype=float)
+        f_len = len(f_out)  # filter length
+
+        # go through each timestep from delay to end (zero padding early ones) and compute output
+        # based on filtered input and filtered history
+        for ts in range(DELAY, T):
+            if ts < DELAY + f_len:
+                in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_1[:ts - DELAY + 1]])
+                in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_2[:ts - DELAY + 1]])
+                out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out[:ts - DELAY + 1]])
+            else:
+                in_1_subset = in_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                in_2_subset = in_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                out_subset = out[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+
+            out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + out_subset.dot(f_out[::-1]) + c
+            out[ts] += np.random.normal(0, NOISE)
+
+        link_function = sm.genmod.families.links.identity
+        family = sm.families.Gaussian(link=link_function)
+
+        fitter = fitting.GLMFitter(family=family)
+        fitter.set_params(delay=DELAY, basis_in=[b, b], basis_out=b)
+
+        data = [([in_1, in_2], out)]
+        fitter.fit(data=data, start=f_len)
+        prediction = fitter.predict()
+        constant, in_filters, out_filter = fitter.constant, fitter.in_filters, fitter.out_filters
+
+        print('True constant: {}'.format(c))
+        print('Recovered constant: {}'.format(constant))
+
+        # make figure to output test results
+        fig = plt.figure(figsize=(10, 5), tight_layout=True)
+        ax_ts = fig.add_subplot(2, 1, 1)
+        ax_filt_0 = fig.add_subplot(2, 2, 3)
+        ax_filt_1 = fig.add_subplot(2, 2, 4, sharey=ax_filt_0)
+        ax_filts = [ax_filt_0, ax_filt_1]
+
+        ax_ts.plot(np.transpose([in_1, in_2, out]))
+        ax_ts.plot(np.arange(T)[-len(prediction):], prediction, 'r--')
+        ax_ts.set_xlabel('t')
+        ax_ts.set_ylabel('input and output')
+
+        ax_filts[0].plot(t, f_in_1, 'b')
+        ax_filts[0].plot(t, f_in_2, 'g')
+        ax_filts[0].plot(t, f_out, 'r')
+        ax_filts[0].set_xlim(t[0], t[-1])
+        ax_filts[0].set_xlabel('t')
+        ax_filts[0].set_ylabel('filter strength')
+        ax_filts[0].set_title('true filters')
+
+        ax_filts[1].plot(t, in_filters[0], 'b')
+        ax_filts[1].plot(t, in_filters[1], 'g')
+        ax_filts[1].plot(t, out_filter, 'r')
+        ax_filts[1].set_xlim(t[0], t[-1])
+        ax_filts[1].set_xlabel('t')
+        ax_filts[1].set_ylabel('filter strength')
+        ax_filts[1].set_title('recovered filters')
+
+        SAVE_PATH = os.path.join(
+            FIGURE_SAVE_DIR,
+            'test_recovery_of_filters_from_basic_ARMA_fit.png'
         )
         fig.savefig(SAVE_PATH)
 
