@@ -10,7 +10,6 @@ import statsmodels.api as sm
 import unittest
 
 import fitting
-import time_series
 
 FIGURE_SAVE_DIR = '/Users/rkp/Desktop'
 
@@ -125,22 +124,25 @@ class GLMFitterTestCase(unittest.TestCase):
         """
         # make our signals
         T = 500
+        N_TRAIN = 5
         NOISE = 0.2
         SCALING = 0.2
         DELAY = 5
+        SMOOTH = 3
         cc = np.concatenate
 
-        confound_1 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 7)
-        in_11 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
-        in_12 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
+        # make stimuli
+        confound_train = [ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), SMOOTH) for _ in range(N_TRAIN)]
+        in_1_train = [ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), SMOOTH) for _ in range(N_TRAIN)]
+        in_2_train = [ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), SMOOTH) for _ in range(N_TRAIN)]
 
-        confound_2 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 7)
-        in_21 = ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), 1)
-        in_22 = ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), 3)
+        confound_test = [ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), SMOOTH)]
+        in_1_test = [ndimage.gaussian_filter1d(np.random.normal(0, 1, (T,)), SMOOTH)]
+        in_2_test = [ndimage.gaussian_filter1d(np.random.normal(0, 2, (T,)), SMOOTH)]
 
         c = -0.4
         c_confound = 0.2
-        t = np.linspace(0, 100)
+        t = np.arange(0, 100)
         b_1 = np.exp(-t/5)/5
         b_2 = np.exp(-t/10)/10
         b_3 = np.exp(-t/15)/15
@@ -148,88 +150,127 @@ class GLMFitterTestCase(unittest.TestCase):
         b_5 = np.exp(-t/60)/60
         b_6 = np.exp(-t/70)/70
 
+        # full basis (used to generate ground truth output)
         b = np.array([b_1, b_2, b_3, b_4, b_5, b_6]).T
-        b_short = b[:30, :3]
 
         f_in_1 = b.dot(SCALING*np.array([1, 1, 3, 0, 20, 0])[:, None])
         f_in_2 = b.dot(SCALING*np.array([-1, 3, -1, 0, 20, 0])[:, None])
         f_out = b.dot(SCALING*np.array([.5, 4, -.1, 0, 0, 0])[:, None])
 
         # create filtered output stimulus
-        out_1 = np.zeros((T,), dtype=float)
-        out_2 = np.zeros((T,), dtype=float)
+        out_train = [np.zeros((T,), dtype=float) for _ in range(N_TRAIN)]
+        out_test = [np.zeros((T,), dtype=float)]
         f_len = len(f_out)  # filter length
 
         # go through each timestep from delay to end (zero padding early ones) and compute output
         # based on filtered input and filtered history
 
-        # make first signal
-        for ts in range(DELAY, T):
-            if ts < DELAY + f_len:
-                in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_11[:ts - DELAY + 1]])
-                in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_12[:ts - DELAY + 1]])
-                out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out_1[:ts - DELAY + 1]])
-            else:
-                in_1_subset = in_11[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                in_2_subset = in_12[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                out_subset = out_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+        # training signals
+        data_train = []
+        for confound, in_1, in_2, out in zip(confound_train, in_1_train, in_2_train, out_train):
+            for ts in range(DELAY, T):
+                if ts < DELAY + f_len:
+                    in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_1[:ts - DELAY + 1]])
+                    in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_2[:ts - DELAY + 1]])
+                    out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out[:ts - DELAY + 1]])
+                else:
+                    in_1_subset = in_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                    in_2_subset = in_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                    out_subset = out[ts - DELAY + 1 - f_len:ts - DELAY + 1]
 
-            out_1[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
-                out_subset.dot(f_out[::-1]) + c + c_confound * confound_1[ts - DELAY] + np.random.normal(0, NOISE)
+                out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
+                    out_subset.dot(f_out[::-1]) + c + c_confound * confound[ts - DELAY] + np.random.normal(0, NOISE)
+            data_train.append(([confound, in_1, in_2], out))
 
-        for ts in range(DELAY, T):
-            if ts < DELAY + f_len:
-                in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_21[:ts - DELAY + 1]])
-                in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_22[:ts - DELAY + 1]])
-                out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out_2[:ts - DELAY + 1]])
-            else:
-                in_1_subset = in_21[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                in_2_subset = in_22[ts - DELAY + 1 - f_len:ts - DELAY + 1]
-                out_subset = out_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+        # testing signals
+        data_test = []
+        for confound, in_1, in_2, out in zip(confound_test, in_1_test, in_2_test, out_test):
+            for ts in range(DELAY, T):
+                if ts < DELAY + f_len:
+                    in_1_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_1[:ts - DELAY + 1]])
+                    in_2_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), in_2[:ts - DELAY + 1]])
+                    out_subset = cc([np.zeros((f_len - ts + DELAY - 1,), dtype=float), out[:ts - DELAY + 1]])
+                else:
+                    in_1_subset = in_1[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                    in_2_subset = in_2[ts - DELAY + 1 - f_len:ts - DELAY + 1]
+                    out_subset = out[ts - DELAY + 1 - f_len:ts - DELAY + 1]
 
-            out_2[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
-                out_subset.dot(f_out[::-1]) + c + c_confound * confound_2[ts - DELAY] + np.random.normal(0, NOISE)
-        data_1 = [([confound_1, in_11, in_12], out_1)]
-        data_2 = [([confound_2, in_21, in_22], out_2)]
+                out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + \
+                    out_subset.dot(f_out[::-1]) + c + c_confound * confound[ts - DELAY] + np.random.normal(0, NOISE)
+            data_test.append(([confound, in_1, in_2], out))
 
+        # make too-short basis
+        b_short = b[:30, :3]
+
+        # make "over-full" basis
+        t_of = np.arange(0, 180)
+        b_1 = np.exp(-t_of/5)/5
+        b_2 = np.exp(-t_of/10)/10
+        b_3 = np.exp(-t_of/15)/15
+        b_4 = np.exp(-t_of/50)/50
+        b_5 = np.exp(-t_of/60)/60
+        b_6 = np.exp(-t_of/70)/70
+        b_7 = np.exp(-t_of/100)/100
+        b_8 = np.exp(-t_of/130)/130
+
+        b_of = np.array([b_1, b_2, b_3, b_4, b_5, b_6, b_7, b_8]).T
+
+        # define fit hyperparameters
         link_function = sm.genmod.families.links.identity
         family = sm.families.Gaussian(link=link_function)
 
-        fitter1 = fitting.GLMFitter(family)
-        fitter1.set_params(delay=DELAY, basis_in=[None, b_short, b_short], basis_out=b_short)
+        # make basic fitter
+        fitter = fitting.GLMFitter(family)
+        fitter.set_params(delay=DELAY, basis_in=[None, b_short, b_short], basis_out=b_short)
+        fitter.fit(data=data_train, start=f_len)
 
-        fitter1.fit(data=data_1, start=f_len)
-        constant = fitter1.constant
-        in_filters = fitter1.in_filters
-        out_filter = fitter1.out_filters
+        constant = fitter.constant
+        in_filters = fitter.in_filters
+        out_filter = fitter.out_filters
 
-        prediction_1 = fitter1.predict()
-        prediction_2 = fitter1.predict(data_2, start=f_len)
-        _, response_vector_2 = fitter1.make_feature_matrix_and_response_vector(data_2, f_len)
+        prediction_test = fitter.predict(data_test, start=f_len)
+        _, response_vector_test = fitter.make_feature_matrix_and_response_vector(data_test, f_len)
 
-        fitter2 = fitting.GLMFitter(family)
-        fitter2.set_params(delay=DELAY, basis_in=[None, b, b], basis_out=b)
+        # make "full" fitter
+        fitter_full = fitting.GLMFitter(family)
+        fitter_full.set_params(delay=DELAY, basis_in=[None, b, b], basis_out=b)
+        fitter_full.fit(data=data_train, start=f_len)
 
-        fitter2.fit(data=data_2, start=f_len)
+        constant_full = fitter_full.constant
+        in_filters_full = fitter_full.in_filters
+        out_filter_full = fitter_full.out_filters
+
+        prediction_test_full = fitter_full.predict(data_test, start=f_len)
+        _, response_vector_test_full = fitter_full.make_feature_matrix_and_response_vector(data_test, f_len)
+
+        # make "overfull" fitter
+        fitter_of = fitting.GLMFitter(family)
+        fitter_of.set_params(delay=DELAY, basis_in=[None, b_of, b_of], basis_out=b_of)
+
+        fitter_of.fit(data=data_train, start=f_len)
 
         # reconstruct filters from coefficients
-        constant_full = fitter2.constant
-        in_filters_full = fitter2.in_filters
-        out_filter_full = fitter2.out_filters
+        constant_of = fitter_of.constant
+        in_filters_of = fitter_of.in_filters
+        out_filter_of = fitter_of.out_filters
 
-        prediction_2_full = fitter2.predict(data_2, start=f_len)
-        _, response_vector_2_full = fitter2.make_feature_matrix_and_response_vector(data_2, f_len)
+        prediction_test_of = fitter_of.predict(data_test, start=f_len)
+        _, response_vector_test_of = fitter_of.make_feature_matrix_and_response_vector(data_test, f_len)
 
-        self.assertEqual(len(prediction_2), len(prediction_2_full))
+        self.assertEqual(len(prediction_test), len(prediction_test_full))
+        self.assertEqual(len(prediction_test), len(prediction_test_of))
 
-        resid_test = (prediction_2 - response_vector_2)**2
-        resid_test_full = (prediction_2_full - response_vector_2_full)**2
+        resid_test = (prediction_test - response_vector_test)**2
+        resid_test_full = (prediction_test_full - response_vector_test_full)**2
+        resid_test_of = (prediction_test_of - response_vector_test_of)**2
 
         print('True constant: {}'.format(c))
         print('Recovered constant: {}'.format(constant))
         print('Recovered constant (full): {}'.format(constant_full))
+        print('Recovered constant (overfull): {}'.format(constant_of))
         print('Test residual: {}'.format(resid_test.sum()))
         print('Test residual (full model): {}'.format(resid_test_full.sum()))
+        print('Test residual (overfull model): {}'.format(resid_test_of.sum()))
 
         # make figure to output test results
         fig = plt.figure(figsize=(10, 8), tight_layout=True)
@@ -240,20 +281,19 @@ class GLMFitterTestCase(unittest.TestCase):
         ax_filt_1 = fig.add_subplot(4, 2, 4, sharey=ax_filt_0)
         ax_filts = [ax_filt_0, ax_filt_1]
 
-        ax_ts_0.plot(np.transpose([in_11, in_12, out_1]))
-        ax_ts_0.plot(np.arange(T)[-len(prediction_1):], prediction_1, 'r--')
+        ax_ts_0.plot(np.transpose([in_1_train[0], in_2_train[0], out_train[0]]))
         ax_ts_0.set_xlabel('t')
         ax_ts_0.set_ylabel('input and output')
         ax_ts_0.set_title('training time series')
 
-        ax_ts_1.plot(np.transpose([in_21, in_22, out_2]))
-        ax_ts_1.plot(np.arange(T)[-len(prediction_2):], prediction_2, 'r--')
+        ax_ts_1.plot(np.transpose([in_1_test[0], in_2_test[0], out_test[0]]))
+        ax_ts_1.plot(np.arange(T)[-len(prediction_test):], prediction_test, 'r--')
         ax_ts_1.set_xlabel('t')
         ax_ts_1.set_ylabel('input and output')
         ax_ts_1.set_title('test time series')
 
-        ax_resid.plot(np.arange(T)[-len(prediction_2):], resid_test, 'k--')
-        ax_resid.plot(np.arange(T)[-len(prediction_2):], resid_test_full, 'k')
+        ax_resid.plot(np.arange(T)[-len(prediction_test):], resid_test, 'k--')
+        ax_resid.plot(np.arange(T)[-len(prediction_test):], resid_test_full, 'k')
 
         ax_resid.set_xlabel('t')
         ax_resid.set_ylabel('residual')
