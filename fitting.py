@@ -18,7 +18,7 @@ class GLMFitter(object):
         self.tsm = time_series.Munger()
         self.constant = None
         self.in_filters = None
-        self.out_filters = None
+        self.out_filter = None
         self.model = None
         self.results = None
         self.feature_matrix = None

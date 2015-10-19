@@ -74,7 +74,7 @@ class GLMFitterTestCase(unittest.TestCase):
 
         data = [([in_1, in_2], out)]
         fitter.fit(data=data, start=f_len)
-        constant, in_filters, out_filter = fitter.constant, fitter.in_filters, fitter.out_filters
+        constant, in_filters, out_filter = fitter.constant, fitter.in_filters, fitter.out_filter
         prediction = fitter.predict()
 
         print('True constant: {}'.format(c))
@@ -226,7 +226,7 @@ class GLMFitterTestCase(unittest.TestCase):
 
         constant = fitter.constant
         in_filters = fitter.in_filters
-        out_filter = fitter.out_filters
+        out_filter = fitter.out_filter
 
         prediction_test = fitter.predict(data_test, start=f_len)
         _, response_vector_test = fitter.make_feature_matrix_and_response_vector(data_test, f_len)
@@ -238,7 +238,7 @@ class GLMFitterTestCase(unittest.TestCase):
 
         constant_full = fitter_full.constant
         in_filters_full = fitter_full.in_filters
-        out_filter_full = fitter_full.out_filters
+        out_filter_full = fitter_full.out_filter
 
         prediction_test_full = fitter_full.predict(data_test, start=f_len)
         _, response_vector_test_full = fitter_full.make_feature_matrix_and_response_vector(data_test, f_len)
@@ -252,7 +252,7 @@ class GLMFitterTestCase(unittest.TestCase):
         # reconstruct filters from coefficients
         constant_of = fitter_of.constant
         in_filters_of = fitter_of.in_filters
-        out_filter_of = fitter_of.out_filters
+        out_filter_of = fitter_of.out_filter
 
         prediction_test_of = fitter_of.predict(data_test, start=f_len)
         _, response_vector_test_of = fitter_of.make_feature_matrix_and_response_vector(data_test, f_len)
