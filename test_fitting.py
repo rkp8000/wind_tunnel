@@ -66,10 +66,7 @@ class GLMFitterTestCase(unittest.TestCase):
             out[ts] = in_1_subset.dot(f_in_1[::-1]) + in_2_subset.dot(f_in_2[::-1]) + out_subset.dot(f_out[::-1]) + c
             out[ts] += np.random.normal(0, NOISE)
 
-        link_function = sm.genmod.families.links.identity
-        family = sm.families.Gaussian(link=link_function)
-
-        fitter = fitting.GLMFitter(family=family)
+        fitter = fitting.GLMFitter(link='identity', family='Gaussian')
         fitter.set_params(delay=DELAY, basis_in=[b, b], basis_out=b)
 
         data = [([in_1, in_2], out)]
@@ -215,12 +212,8 @@ class GLMFitterTestCase(unittest.TestCase):
 
         b_of = np.array([b_1, b_2, b_3, b_4, b_5, b_6, b_7, b_8]).T
 
-        # define fit hyperparameters
-        link_function = sm.genmod.families.links.identity
-        family = sm.families.Gaussian(link=link_function)
-
         # make basic fitter
-        fitter = fitting.GLMFitter(family)
+        fitter = fitting.GLMFitter(link='identity', family='Gaussian')
         fitter.set_params(delay=DELAY, basis_in=[None, b_short, b_short], basis_out=b_short)
         fitter.fit(data=data_train, start=f_len)
 
@@ -232,7 +225,7 @@ class GLMFitterTestCase(unittest.TestCase):
         _, response_vector_test = fitter.make_feature_matrix_and_response_vector(data_test, f_len)
 
         # make "full" fitter
-        fitter_full = fitting.GLMFitter(family)
+        fitter_full = fitting.GLMFitter(link='identity', family='Gaussian')
         fitter_full.set_params(delay=DELAY, basis_in=[None, b, b], basis_out=b)
         fitter_full.fit(data=data_train, start=f_len)
 
@@ -244,7 +237,7 @@ class GLMFitterTestCase(unittest.TestCase):
         _, response_vector_test_full = fitter_full.make_feature_matrix_and_response_vector(data_test, f_len)
 
         # make "overfull" fitter
-        fitter_of = fitting.GLMFitter(family)
+        fitter_of = fitting.GLMFitter(link='identity', family='Gaussian')
         fitter_of.set_params(delay=DELAY, basis_in=[None, b_of, b_of], basis_out=b_of)
 
         fitter_of.fit(data=data_train, start=f_len)

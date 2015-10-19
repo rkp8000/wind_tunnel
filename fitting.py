@@ -12,8 +12,11 @@ PLOT_COLOR_CYCLE = ['k', 'b', 'g', 'r', 'c']
 
 class GLMFitter(object):
 
-    def __init__(self, family):
-        self.family = family
+    def __init__(self, link, family):
+        if link == 'identity':
+            link_function = sm.genmod.families.links.identity
+        if family == 'Gaussian':
+            self.family = sm.families.Gaussian(link=link_function)
 
         self.tsm = time_series.Munger()
         self.constant = None
