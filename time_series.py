@@ -51,7 +51,9 @@ class Munger(object):
                 orth_basis = np.linalg.qr(basis)[0]
             orth_basis_in.append(orth_basis)
 
-        if self.basis_out is None:
+        if self.basis_out is False:
+            orth_basis_out = False
+        elif self.basis_out is None:
             orth_basis_out = None
         else:
             orth_basis_out = np.linalg.qr(self.basis_out)[0]
@@ -82,7 +84,9 @@ class Munger(object):
                 # since they are flipped before doing a convolution
                 feature_matrix.append(data_matrix.dot(basis[::-1]))
 
-        if self.basis_out is None:
+        if self.basis_out is False:
+            pass
+        elif self.basis_out is None:
             feature_matrix.append(endog[:-self.delay][:, None])
         else:
             data_matrix = self.roll_into_matrix(endog[:-self.delay], window_len=len(self.basis_out))
@@ -110,7 +114,9 @@ class Munger(object):
             else:
                 in_filters.append(basis.dot(coeffs[ctr:ctr + basis.shape[1]]))
                 ctr += basis.shape[1]
-        if self.basis_out is None:
+        if self.basis_out is False:
+            out_filter = None
+        elif self.basis_out is None:
             out_filter = coeffs[ctr]
         else:
             out_filter = self.basis_out.dot(coeffs[ctr:ctr + self.basis_out.shape[1]])
