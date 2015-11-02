@@ -97,7 +97,9 @@ class GLMFitter(object):
                 t = np.arange(len(in_filter))
                 ax.plot(t, in_filter, color=PLOT_COLOR_CYCLE[ctr + 1], lw=2)
 
-        if isinstance(self.out_filter, float):
+        if self.out_filter is False:
+            pass
+        elif isinstance(self.out_filter, float):
             ax.scatter(0, self.out_filter, s=30, c=PLOT_COLOR_CYCLE[-1])
         else:
             t = np.arange(len(self.out_filter))
@@ -119,7 +121,7 @@ class GLMFitter(object):
                 for basis in basis_in.T:
                     ax.plot(t, basis, color=PLOT_COLOR_CYCLE[ctr + 1], lw=2)
 
-        if self.original_basis_out is not None:
+        if self.original_basis_out is not None and self.original_basis_out is not False:
             t = np.arange(len(self.original_basis_out))
             for basis in self.original_basis_out.T:
                 ax.plot(t, basis, color=PLOT_COLOR_CYCLE[-1], lw=2)
