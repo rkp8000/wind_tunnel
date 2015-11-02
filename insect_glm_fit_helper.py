@@ -71,7 +71,9 @@ def make_exponential_basis_functions(input_taus, output_taus, domain_factor=4.61
                         basis[:, ctr] = np.exp(-t / tau)
                 basis_in.append(basis)
 
-            if output_tau is None:
+            if output_tau is False:
+                basis_out = False
+            elif output_tau is None:
                 basis_out = None
             else:
                 t = np.arange(np.round(domain_factor * np.max(output_tau)), dtype=float)
@@ -86,7 +88,7 @@ def make_exponential_basis_functions(input_taus, output_taus, domain_factor=4.61
     max_filter_length = 0
     for basis_in, basis_out in zip(basis_ins, basis_outs):
         in_filter_max = np.max([0] + [len(basis) for basis in basis_in if basis is not None])
-        if basis_out is not None:
+        if basis_out is not None and basis_out is not False:
             out_filter_max = len(basis_out)
         else:
             out_filter_max = 0
