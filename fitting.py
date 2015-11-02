@@ -97,7 +97,7 @@ class GLMFitter(object):
                 t = np.arange(len(in_filter))
                 ax.plot(t, in_filter, color=PLOT_COLOR_CYCLE[ctr + 1], lw=2)
 
-        if self.out_filter is False:
+        if self.out_filter is None:
             pass
         elif isinstance(self.out_filter, float):
             ax.scatter(0, self.out_filter, s=30, c=PLOT_COLOR_CYCLE[-1])
