@@ -85,5 +85,5 @@ class MainTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    #script.main(N_TRIALS, N_TRAIN, N_TEST, DATA_DIR_ENV_VAR_TEST)
+    script.main(N_TRIALS, N_TRAIN, N_TEST, DATA_DIR_ENV_VAR_TEST)
     unittest.main()
