@@ -15,6 +15,8 @@ class GLMFitter(object):
     def __init__(self, link, family):
         if link == 'identity':
             link_function = sm.genmod.families.links.identity
+        elif link == 'log':
+            link_function = sm.genmod.families.links.log
         if family == 'Gaussian':
             self.family = sm.families.Gaussian(link=link_function)
 
