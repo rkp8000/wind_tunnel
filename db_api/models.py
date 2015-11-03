@@ -186,6 +186,16 @@ class TrajectoryBasicInfo(Base):
     trajectory = relationship("Trajectory", backref=backref('basic_info', uselist=False))
 
 
+class TrajectoryOdorStats(Base):
+    __tablename__ = 'trajectory_odor_stats'
+
+    id = Column(Integer, primary_key=True)
+    trajectory_id = Column(String(100), ForeignKey('trajectory.id'))
+    integrated_odor = Column(Float)
+
+    trajectory = relationship("Trajectory", backref=backref('odor_stats', uselist=False))
+
+
 class FigureData():
 
     id = Column(Integer, primary_key=True)
@@ -408,6 +418,120 @@ class CrossingFeatureSetBasic(Base):
     heading_xyz_exit = Column(Float)
 
     crossing = relationship("Crossing", backref=backref('feature_set_basic', uselist=False))
+
+
+class GlmFitSet(Base):
+    __tablename__ = 'glm_fit_set'
+
+    id = Column(Integer, primary_key=True)
+    experiment_id = Column(String(255), ForeignKey('experiment.id'))
+    odor_state = Column(String(50))
+    name = Column(String(255))
+    link = Column(String(50))
+    family = Column(String(50))
+    integrated_odor_threshold = Column(Float)
+    predicted = Column(String(255))
+    delay = Column(Integer)
+    start_time_point = Column(Integer)
+    n_glms = Column(Integer)
+    n_train = Column(Integer)
+    n_test = Column(Integer)
+    n_trials = Column(Integer)
+    root_dir_env_var = Column(String(255))
+    path_relative = Column(String(255))
+    file_name = Column(String(255))
+
+    experiment = relationship("Experiment", backref=backref('glm_fit_sets'))
+
+    _input_sets = None
+    _outputs = None
+    _basis_in = None
+    _basis_out = None
+    _trajs_train = None
+    _trajs_test = None
+    _glms = None
+    _residuals = None
+
+    @property
+    def root_dir(self):
+        return os.getenv(self.root_dir_env_var)
+
+    @property
+    def full_path(self):
+        return os.path.join(self.root_dir, self.path_relative, self.file_name)
+
+    @property
+    def input_sets(self):
+        if self._input_sets is None:
+            with open(self.full_path, 'rb') as f:
+                self._input_sets = pickle.load(f)['input_sets']
+        return self._input_sets
+
+    @property
+    def outputs(self):
+        if self._outputs is None:
+            with open(self.full_path, 'rb') as f:
+                self._outputs = pickle.load(f)['outputs']
+        return self._outputs
+
+    @property
+    def basis_in(self):
+        if self._basis_in is None:
+            with open(self.full_path, 'rb') as f:
+                self._basis_in = pickle.load(f)['basis_in']
+        return self._basis_in
+
+    @property
+    def basis_out(self):
+        if self._basis_out is None:
+            with open(self.full_path, 'rb') as f:
+                self._basis_out = pickle.load(f)['basis_out']
+        return self._basis_out
+
+    @property
+    def trajs_train(self):
+        if self._trajs_train is None:
+            with open(self.full_path, 'rb') as f:
+                self._trajs_train = pickle.load(f)['trajs_train']
+        return self._trajs_train
+
+    @property
+    def trajs_test(self):
+        if self._trajs_test is None:
+            with open(self.full_path, 'rb') as f:
+                self._trajs_test = pickle.load(f)['trajs_test']
+        return self._trajs_test
+
+    @property
+    def glms(self):
+        if self._glms is None:
+            with open(self.full_path, 'rb') as f:
+                self._glms = pickle.load(f)['glms']
+        return self._glms
+
+    @property
+    def residuals(self):
+        if self._residuals is None:
+            with open(self.full_path, 'rb') as f:
+                self._residuals = pickle.load(f)['residuals']
+        return self._residuals
+
+    def save_to_file(self, input_sets, outputs, basis_in, basis_out,
+                     trajs_train, trajs_test, glms, residuals):
+
+        data_dict = {
+            'input_sets': input_sets,
+            'outputs': outputs,
+            'basis_in': basis_in,
+            'basis_out': basis_out,
+            'trajs_train': trajs_train,
+            'trajs_test': trajs_test,
+            'glms': glms,
+            'residuals': residuals
+        }
+
+        with open(self.full_path, 'wb') as f:
+            pickle.dump(data_dict, f)
 
 
 if __name__ == '__main__':
