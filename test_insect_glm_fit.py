@@ -12,8 +12,8 @@ import insect_glm_fit_helper as igfh
 
 plt.style.use('ggplot')
 
-N_TRAIN = 10
-N_TEST = 5
+N_TRAIN = 100
+N_TEST = 50
 
 EXPT_ID = 'fruitfly_0.4mps_checkerboard_floor'
 ODOR_STATE = 'on'
@@ -23,7 +23,7 @@ FAMILY_NAME = 'Gaussian'
 
 INTEGRATED_ODOR_THRESHOLD = 10
 
-DELAY = 2  # in timesteps (dt = 0.01s)
+DELAY = 1  # in timesteps (dt = 0.01s)
 
 SAVE_DIR = '/Users/rkp/Desktop'
 
@@ -43,7 +43,7 @@ INPUT_TAUS = [  # in units of timesteps (dt = 0.01s)
     (None, ),
     (None, None),
     (None, [2, 5, 7, 10, 25]),
-    (None, [2, 5, 7, 10, 25, 200]),
+    (None, [2, 5, 7, 10, 25, 300]),
 ]
 
 OUTPUT_TAUS = [
@@ -150,7 +150,7 @@ class VariousModelsDemo(unittest.TestCase):
             t = np.arange(len(data_test[0][1]))[-len(prediction_0):]
 
             ax_ts.plot(t, ground_truth_0, color='k', ls='-')
-            ax_ts.plot(t, prediction_0, color='r', ls='--')
+            ax_ts.plot(t, prediction_0, color='r', ls='--', lw=2)
 
             odor = igfh.time_series_from_trajs(
                 trajs_test,
