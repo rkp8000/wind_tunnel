@@ -20,6 +20,9 @@ class MainTestCase(unittest.TestCase):
 
     def test_data_was_stored_correctly(self):
 
+        # make sure 12 glm_fit_sets were stored
+        glm_fit_sets = script.session.query(models.GlmFitSet).filter_by(name=script.FIT_NAME).all()
+        self.assertEqual(len(list(glm_fit_sets)), 12)
         # loop through all experiments and odor states and make sure a GlmFitSet was stored with correct info
         for expt_id in script.EXPERIMENT_IDS:
             for odor_state in script.ODOR_STATES:
@@ -70,8 +73,15 @@ class MainTestCase(unittest.TestCase):
                 glm = glm_fit_set.glms[-1][-1]
                 start = glm_fit_set.start_time_point
                 residual_stored = glm_fit_set.residuals[-1][-1]
+                trajs_test_ids = glm_fit_set.trajs_test[-1]
+                self.assertTrue(isinstance(trajs_test_ids, list))
+                self.assertTrue(isinstance(trajs_test_ids[0], str))
+                trajs_test = [
+                    script.session.query(models.Trajectory).get(traj_id)
+                    for traj_id in trajs_test_ids
+                ]
                 data_test = igfh.time_series_from_trajs(
-                    glm_fit_set.trajs_test[-1],
+                    trajs_test,
                     inputs=glm.input_set,
                     output=glm.output
                 )
