@@ -5,6 +5,7 @@ from __future__ import print_function, division
 import os
 import numpy as np
 import pickle
+import cPickle
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Boolean, Integer, BigInteger, Float, String, Text, DateTime
 from sqlalchemy.orm import relationship, backref
@@ -464,56 +465,56 @@ class GlmFitSet(Base):
     def input_sets(self):
         if self._input_sets is None:
             with open(self.full_path, 'rb') as f:
-                self._input_sets = pickle.load(f)['input_sets']
+                self._input_sets = cPickle.load(f)['input_sets']
         return self._input_sets
 
     @property
     def outputs(self):
         if self._outputs is None:
             with open(self.full_path, 'rb') as f:
-                self._outputs = pickle.load(f)['outputs']
+                self._outputs = cPickle.load(f)['outputs']
         return self._outputs
 
     @property
     def basis_in(self):
         if self._basis_in is None:
             with open(self.full_path, 'rb') as f:
-                self._basis_in = pickle.load(f)['basis_in']
+                self._basis_in = cPickle.load(f)['basis_in']
         return self._basis_in
 
     @property
     def basis_out(self):
         if self._basis_out is None:
             with open(self.full_path, 'rb') as f:
-                self._basis_out = pickle.load(f)['basis_out']
+                self._basis_out = cPickle.load(f)['basis_out']
         return self._basis_out
 
     @property
     def trajs_train(self):
         if self._trajs_train is None:
             with open(self.full_path, 'rb') as f:
-                self._trajs_train = pickle.load(f)['trajs_train']
+                self._trajs_train = cPickle.load(f)['trajs_train']
         return self._trajs_train
 
     @property
     def trajs_test(self):
         if self._trajs_test is None:
             with open(self.full_path, 'rb') as f:
-                self._trajs_test = pickle.load(f)['trajs_test']
+                self._trajs_test = cPickle.load(f)['trajs_test']
         return self._trajs_test
 
     @property
     def glms(self):
         if self._glms is None:
             with open(self.full_path, 'rb') as f:
-                self._glms = pickle.load(f)['glms']
+                self._glms = cPickle.load(f)['glms']
         return self._glms
 
     @property
     def residuals(self):
         if self._residuals is None:
             with open(self.full_path, 'rb') as f:
-                self._residuals = pickle.load(f)['residuals']
+                self._residuals = cPickle.load(f)['residuals']
         return self._residuals
 
     def save_to_file(self, input_sets, outputs, basis_in, basis_out,
@@ -531,7 +532,7 @@ class GlmFitSet(Base):
         }
 
         with open(self.full_path, 'wb') as f:
-            pickle.dump(data_dict, f)
+            cPickle.dump(data_dict, f, protocol=2)
 
 
 if __name__ == '__main__':
