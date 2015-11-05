@@ -14,7 +14,7 @@ DATA_DIR_ENV_VAR = 'WIND_TUNNEL_FIGURE_DATA_DIRECTORY'
 
 SAVE_DIR = 'glm_fit'
 
-FIT_NAME = 'test_fit'
+FIT_NAME = 'short_long_timescale_bases_fit_0'
 
 EXPERIMENT_IDS = [
     'fruitfly_0.3mps_checkerboard_floor',
@@ -57,7 +57,7 @@ INPUT_TAUS = [  # in units of timesteps (dt = 0.01s)
     (None, ),
     (None, None),
     (None, [2, 5, 7, 10, 25]),
-    (None, [2, 5, 7, 10, 25, 50, 70, 100]),
+    (None, [2, 5, 7, 10, 25, 150, 250]),
 ]
 
 OUTPUT_TAUS = [
@@ -140,52 +140,58 @@ def main(n_trials, n_train_max, n_test_max, root_dir_env_var):
                     # calculate residual
                     residual = np.sqrt(((prediction - ground_truth)**2).mean())
 
+                    # clear out feature matrix and response from glm for efficient storage
+                    glm.feature_matrix = None
+                    glm.response_vector = None
+                    glm.results.remove_data()
                     # store things
                     glms.append(glm)
                     residuals.append(residual)
 
-                trajs_trains.append(trajs_train)
-                trajs_tests.append(trajs_test)
+                trajs_train_ids = [traj.id for traj in trajs_train]
+                trajs_test_ids = [traj.id for traj in trajs_test]
+                trajs_trains.append(trajs_train_ids)
+                trajs_tests.append(trajs_test_ids)
                 glmss.append(glms)
                 residualss.append(residuals)
 
-                # save a glm fit set
-                glm_fit_set = models.GlmFitSet()
+            # save a glm fit set
+            glm_fit_set = models.GlmFitSet()
 
-                # add data to it
-                glm_fit_set.root_dir_env_var = root_dir_env_var
-                glm_fit_set.path_relative = 'glm_fit'
-                glm_fit_set.file_name = '{}_{}_odor_{}.pickle'.format(FIT_NAME, expt_id, odor_state)
-                glm_fit_set.experiment = session.query(models.Experiment).get(expt_id)
-                glm_fit_set.odor_state = odor_state
-                glm_fit_set.name = FIT_NAME
-                glm_fit_set.link = LINK
-                glm_fit_set.family = FAMILY
-                glm_fit_set.integrated_odor_threshold = INTEGRATED_ODOR_THRESHOLD
-                glm_fit_set.predicted = PREDICTED
-                glm_fit_set.delay = DELAY
-                glm_fit_set.start_time_point = START_TIMEPOINT
-                glm_fit_set.n_glms = len(glms)
-                glm_fit_set.n_train = n_train
-                glm_fit_set.n_test = n_test
-                glm_fit_set.n_trials = n_trials
+            # add data to it
+            glm_fit_set.root_dir_env_var = root_dir_env_var
+            glm_fit_set.path_relative = 'glm_fit'
+            glm_fit_set.file_name = '{}_{}_odor_{}.pickle'.format(FIT_NAME, expt_id, odor_state)
+            glm_fit_set.experiment = session.query(models.Experiment).get(expt_id)
+            glm_fit_set.odor_state = odor_state
+            glm_fit_set.name = FIT_NAME
+            glm_fit_set.link = LINK
+            glm_fit_set.family = FAMILY
+            glm_fit_set.integrated_odor_threshold = INTEGRATED_ODOR_THRESHOLD
+            glm_fit_set.predicted = PREDICTED
+            glm_fit_set.delay = DELAY
+            glm_fit_set.start_time_point = START_TIMEPOINT
+            glm_fit_set.n_glms = len(glms)
+            glm_fit_set.n_train = n_train
+            glm_fit_set.n_test = n_test
+            glm_fit_set.n_trials = n_trials
 
-                # save data file
-                glm_fit_set.save_to_file(
-                    input_sets=INPUT_SETS,
-                    outputs=OUTPUTS,
-                    basis_in=basis_ins,
-                    basis_out=basis_outs,
-                    trajs_train=trajs_trains,
-                    trajs_test=trajs_tests,
-                    glms=glmss,
-                    residuals=residualss
-                )
+            # save data file
+            glm_fit_set.save_to_file(
+                input_sets=INPUT_SETS,
+                outputs=OUTPUTS,
+                basis_in=basis_ins,
+                basis_out=basis_outs,
+                trajs_train=trajs_trains,
+                trajs_test=trajs_tests,
+                glms=glmss,
+                residuals=residualss
+            )
 
-                # save everything else (+ link to data file) in database
-                session.add(glm_fit_set)
+            # save everything else (+ link to data file) in database
+            session.add(glm_fit_set)
 
-                commit(session)
+            commit(session)
 
 
 if __name__ == '__main__':
