@@ -12,6 +12,7 @@ This code makes the following plots:
 from __future__ import division, print_function
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats as sp_stats
 plt.style.use('ggplot')
 
 import axis_tools
@@ -28,13 +29,22 @@ EXAMPLE_TRIAL = 0
 EXAMPLE_TRAIN = 0
 EXAMPLE_TEST = 0
 
+N_BINS_RESIDUALS = 20
 
-FIG_SIZE_EXAMPLES = (15, 15)
-FIG_SIZE_FILTERS = (10, 15)
-FIG_SIZE_RESIDUALS = (10, 15)
+FIG_SIZE_EXAMPLES = (18, 15)
+FIG_SIZE_FILTERS = (14, 15)
+FIG_SIZE_RESIDUALS = (14, 15)
 
 FACE_COLOR = 'w'
 FONT_SIZE = 16
+
+MODEL_LABELS = (
+    'constant',
+    'x',
+    'x, odor',
+    'x, odor_short',
+    'x, odor_long',
+)
 
 
 glm_fit_set = session.query(models.GlmFitSet).filter_by(
@@ -45,23 +55,26 @@ glm_fit_set = session.query(models.GlmFitSet).filter_by(
 
 start_time_point = glm_fit_set.start_time_point
 delay = glm_fit_set.delay
+n_glms = glm_fit_set.n_glms
+
+# get GLMs for example trial
+glms = glm_fit_set.glms[EXAMPLE_TRIAL]
 
 # plot example trajectories
+traj_train_id = glm_fit_set.trajs_train[EXAMPLE_TRIAL][EXAMPLE_TRAIN]
+traj_test_id = glm_fit_set.trajs_test[EXAMPLE_TRIAL][EXAMPLE_TEST]
+
+traj_train = session.query(models.Trajectory).get(traj_train_id)
+traj_test = session.query(models.Trajectory).get(traj_test_id)
+
 fig, axs = plt.subplots(
-    glm_fit_set.n_glms, 2,
+    n_glms, 2,
     figsize=FIG_SIZE_EXAMPLES,
     facecolor=FACE_COLOR,
     tight_layout=True
 )
 
 axs_odor = [[None, None] for _ in range(len(axs))]
-
-glms = glm_fit_set.glms[EXAMPLE_TRIAL]
-traj_train_id = glm_fit_set.trajs_train[EXAMPLE_TRIAL][EXAMPLE_TRAIN]
-traj_test_id = glm_fit_set.trajs_test[EXAMPLE_TRIAL][EXAMPLE_TEST]
-
-traj_train = session.query(models.Trajectory).get(traj_train_id)
-traj_test = session.query(models.Trajectory).get(traj_test_id)
 
 for t_ctr, traj in enumerate([traj_train, traj_test]):
     for g_ctr, glm in enumerate(glms):
@@ -117,6 +130,66 @@ for ax in axs.flatten():
     axis_tools.set_fontsize(ax, FONT_SIZE)
 
 for ax in axs_odor.flatten():
+    axis_tools.set_fontsize(ax, FONT_SIZE)
+
+
+# plot filters
+fig, axs = plt.subplots(
+    n_glms, 2,
+    facecolor=FACE_COLOR,
+    figsize=FIG_SIZE_FILTERS,
+    tight_layout=True,
+)
+
+for g_ctr, glm in enumerate(glms):
+    glm.plot_filters(axs[g_ctr, 0])
+    glm.plot_basis(axs[g_ctr, 1])
+
+axs[0, 0].set_title('Filters')
+axs[0, 1].set_title('Basis functions')
+
+for ax in axs[-1, :]:
+    ax.set_xlabel('time steps')
+
+for ax in axs.flatten():
+    axis_tools.set_fontsize(ax, FONT_SIZE)
+
+
+# plot residuals
+residuals = np.array(glm_fit_set.residuals)
+
+fig = plt.figure(
+    figsize=FIG_SIZE_RESIDUALS,
+    facecolor=FACE_COLOR,
+    tight_layout=True,
+)
+
+ax_main = fig.add_subplot(1, 2, 1)
+axs = [fig.add_subplot(n_glms - 1, 2, (ctr + 1)*2) for ctr in range(n_glms - 1)]
+
+ax_main.plot(residuals.T, color='k', ls='--')
+ax_main.set_xticks(range(5))
+ax_main.set_xticklabels(MODEL_LABELS, rotation='vertical')
+
+for ctr, resid in enumerate(residuals.T):
+    ax_main.scatter(ctr * np.ones(len(resid)), resid, s=50, c='k')
+
+    if ctr >= 1:
+        diff = resid - residuals.T[ctr - 1]
+        _, p_val = sp_stats.ttest_1samp(diff, 0)
+
+        axs[ctr - 1].hist(diff, N_BINS_RESIDUALS)
+        axs[ctr - 1].set_title('M = {0:.4f}, P = {1:.4f}'.format(diff.mean(), p_val))
+
+        axs[ctr - 1].axvline(diff.mean(), ls='--', color='b', lw=2)
+
+ax_main.set_ylabel('Test set prediction error ({})'.format(glm_fit_set.predicted))
+axs[-1].set_xlabel('Test prediction difference')
+
+for ax in axs:
+    ax.set_ylabel('Counts')
+
+for ax in axs + [ax_main]:
     axis_tools.set_fontsize(ax, FONT_SIZE)
 
 plt.show()
