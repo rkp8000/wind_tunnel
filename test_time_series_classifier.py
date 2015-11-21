@@ -92,8 +92,13 @@ class VARTestCase(unittest.TestCase):
     def test_we_can_classify_time_series_generated_from_ideal_distributions(self):
 
         # make 2 models
-        var_model_1 = tsc.VarModel(a=self.a_1, k=self.k_1)
-        var_model_2 = tsc.VarModel(a=self.a_2, k=self.k_2)
+        var_model_1 = tsc.VarModel(dim=3, order=2)
+        var_model_2 = tsc.VarModel(dim=3, order=2)
+        var_model_1.a = self.a_1
+        var_model_1.k = self.k_1
+        var_model_2.a = self.a_2
+        var_model_2.k = self.k_2
+
 
         # check that full matrix has correct shape
         self.assertEqual(var_model_1.a_full.shape, (3, 6))

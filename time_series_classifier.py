@@ -7,17 +7,35 @@ import numpy as np
 
 class VarModel(object):
 
-    def __init__(self, a, k):
-        self.a = a
-        self.k = k
-        self.k_inv = np.linalg.inv(k)
-        self.k_det = np.linalg.det(k)
-        self.noise_mean = np.zeros((len(k),), dtype=float)
-        self.order = len(a)
-        self.dim = len(k)
+    def __init__(self, dim, order):
+        self.dim = dim
+        self.order = order
 
+        self._a = None
+        self._k = None
+        self.a_full = None
+        self.k_inv = None
+        self.k_det = None
+
+    @property
+    def a(self):
+        return self._a
+
+    @a.setter
+    def a(self, a):
+        self._a = a
         # create full a matrix so that entire update can be done in one multiplication
         self.a_full = np.concatenate(a, axis=1)
+
+    @property
+    def k(self):
+        return self._k
+
+    @k.setter
+    def k(self, k):
+        self._k = k
+        self.k_inv = np.linalg.inv(k)
+        self.k_det = np.linalg.det(k)
 
     def sample(self, t, initial='zero'):
         """
