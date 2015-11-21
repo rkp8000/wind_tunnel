@@ -43,18 +43,18 @@ class VarModel(object):
             ts[ctr] = next_tp
         return ts
 
-    def log_prob(self, tss):
+    def log_prob(self, ts):
         """
         Calculate the log probability of observing a set of time-series. The calculation
         begins starting at time points at self.order. (E.g., if it's a 3rd order model, we can
         only calculate the probabilities of time points at index 3 and above).
-        :param tss: list of time-series
+        :param ts: time-series
         :return: log probability
         """
         # calculate predictions at each time point
-        predictors = np.concatenate([self.munge(ts, order=self.order) for ts in tss], axis=0)
+        predictors = self.munge(ts, order=self.order)
         predictions = self.a_full.dot(predictors.T)
-        truths = np.concatenate([ts[self.order:, :] for ts in tss], axis=0).T
+        truths = ts[self.order:, :].T
 
         log_probs = self.log_prob_mvn(truths, means=predictions, cov_inv=self.k_inv, cov_det=self.k_det)
         return log_probs.sum()
@@ -85,6 +85,19 @@ class VarModel(object):
         norm_factor = np.log((2*np.pi) ** (-0.5*dim)) + np.log(cov_det ** -0.5)
 
         return quad_terms + norm_factor
+
+    @staticmethod
+    def munge(data, order):
+        """
+        Reshape a vector time-series into a matrix each of whose rows is the concatenation of the last
+        several vector time points.
+        :param data:
+        :param order:
+        :return:
+        """
+        n_rows = len(data) - order
+        temp = [data[order - offset - 1:order - offset + n_rows - 1, :] for offset in range(0, order)]
+        return np.concatenate(temp, axis=1)
 
 
 class VarClassifierBinary(object):

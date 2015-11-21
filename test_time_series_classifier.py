@@ -29,6 +29,34 @@ class VARStaticMethodsTestCase(unittest.TestCase):
 
         np.testing.assert_array_almost_equal(logpdf_true, logpdf_var)
 
+    def test_munging(self):
+        data = np.array([
+            [0, 0, 0],
+            [1, 1, 1],
+            [2, 2, 2],
+            [3, 3, 3],
+            [4, 4, 4],
+            [5, 5, 5],
+            [6, 6, 6],
+            [7, 7, 7],
+            [8, 8, 8],
+            [9, 9, 9],
+        ])
+
+        munged_data = tsc.VarModel.munge(data, order=3)
+
+        munged_data_correct = np.array([
+            [2, 2, 2, 1, 1, 1, 0, 0, 0],
+            [3, 3, 3, 2, 2, 2, 1, 1, 1],
+            [4, 4, 4, 3, 3, 3, 2, 2, 2],
+            [5, 5, 5, 4, 4, 4, 3, 3, 3],
+            [6, 6, 6, 5, 5, 5, 4, 4, 4],
+            [7, 7, 7, 6, 6, 6, 5, 5, 5],
+            [8, 8, 8, 7, 7, 7, 6, 6, 6],
+        ])
+
+        np.testing.assert_array_equal(munged_data_correct, munged_data)
+
 
 class VARTestCase(unittest.TestCase):
 
