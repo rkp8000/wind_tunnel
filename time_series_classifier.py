@@ -138,12 +138,48 @@ class VarModel(object):
 
 class VarClassifierBinary(object):
 
-    def __init__(self):
-        pass
+    def __init__(self, dim, order):
+        self.dim = dim
+        self.order = order
+        self.model_pos = None
+        self.model_neg = None
+        self.log_prior_pos = None
+        self.log_prior_neg = None
 
     def train(self, positives, negatives):
-        pass
+        """
+        Train classifier to be able to distinguish the two sets of time-series.
+        :param positives: list of example time-series belonging to positive class
+        :param negatives: list of example time-series belonging to negative class
+        """
+        # learn priors
+        prior_pos = len(positives) / (len(positives) + len(negatives))
+        self.log_prior_pos = np.log(prior_pos)
+        self.log_prior_neg = np.log(1 - prior_pos)
 
-    def predict(self, time_series):
-        pass
+        # fit models
+        self.model_pos = VarModel(self.dim, self.order)
+        self.model_neg = VarModel(self.dim, self.order)
 
+        self.model_pos.fit(positives)
+        self.model_neg.fit(negatives)
+
+    def predict(self, tss):
+        """
+        Predict which class each time-series belongs to.
+        :param tss:
+        :return:
+        """
+        predictions = []
+
+        for ts in tss:
+
+            log_like_pos = self.model_pos.log_prob(ts)
+            log_like_neg = self.model_neg.log_prob(ts)
+
+            if (log_like_pos + self.log_prior_pos) > (log_like_neg + self.log_prior_neg):
+                predictions.append(1)
+            else:
+                predictions.append(-1)
+
+        return predictions

@@ -157,7 +157,7 @@ class VARTestCase(unittest.TestCase):
             self.assertGreater(var_model_2.log_prob(ts_2), var_model_1.log_prob(ts_2))
 
         # make sure we can classify time-series correctly using the classifier
-        f = tsc.VarClassifierBinary()
+        f = tsc.VarClassifierBinary(dim=3, order=2)
         f.train(positives=tss_1, negatives=tss_2)
         predictions = f.predict(tss_2 + tss_1)
         ground_truth = cc([-np.ones((len(tss_2),), dtype=int),
