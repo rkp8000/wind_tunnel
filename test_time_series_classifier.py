@@ -63,9 +63,9 @@ class VARTestCase(unittest.TestCase):
     def setUp(self):
         # specify parameters
         self.a_1 = np.array([
-            [[.9, 0, -.1],
-             [-.2, .9, .1],
-             [-.1, 0, .85]],
+            [[.4, 0, -.1],
+             [-.2, .4, .1],
+             [-.1, 0, .5]],
             [[.1, 0, -.01],
              [.1, .2, .05],
              [.05, 0, .3]],
@@ -79,15 +79,46 @@ class VARTestCase(unittest.TestCase):
             [[.5, -.2, .06],
              [-.1, .2, .1],
              [-.2, 0, .3]],
-            [[.6, -.2, .05],
-             [.04, .8, -.1],
-             [.2, 0.1, .5]],
+            [[.3, -.2, .05],
+             [.04, .3, -.1],
+             [.2, 0.1, .4]],
         ])
         self.k_2 = np.array([
             [.2, .1, -.05],
             [.1, .3, 0],
             [-.05, 0, .3],
         ])
+
+    def test_we_can_successfully_fit_a_dataset_whose_true_params_we_know(self):
+
+        # make noise-less model
+        var_model_true = tsc.VarModel(dim=3, order=2)
+        var_model_true.a = self.a_1
+        var_model_true.k = np.zeros((3, 3), dtype=float)
+
+        # sample several time-series
+        initials = [
+            np.array([
+                [.1, .5, -.1],
+                [-.1, .7, -.3],
+            ]),
+            np.array([
+                [-.1, .2, -.2],
+                [.2, .3, -.3],
+            ]),
+        ]
+
+        tss = [var_model_true.sample(10, initial=initial) for initial in initials]
+
+        # make sure we can recover var_model_true.a by fitting the noise-less dataset
+        var_model_fit = tsc.VarModel(dim=3, order=2)
+        var_model_fit.fit(tss)
+
+        np.testing.assert_array_almost_equal(var_model_true.a_full, var_model_fit.a_full)
+        np.testing.assert_array_almost_equal(var_model_true.k, var_model_fit.k)
+
+        for a_true, a_fit in zip(var_model_true.a, var_model_fit.a):
+            np.testing.assert_array_almost_equal(a_true, a_fit)
 
     def test_we_can_classify_time_series_generated_from_ideal_distributions(self):
 
@@ -98,7 +129,6 @@ class VARTestCase(unittest.TestCase):
         var_model_1.k = self.k_1
         var_model_2.a = self.a_2
         var_model_2.k = self.k_2
-
 
         # check that full matrix has correct shape
         self.assertEqual(var_model_1.a_full.shape, (3, 6))

@@ -34,8 +34,6 @@ class VarModel(object):
     @k.setter
     def k(self, k):
         self._k = k
-        self.k_inv = np.linalg.inv(k)
-        self.k_det = np.linalg.det(k)
 
     def sample(self, t, initial='zero'):
         """
@@ -69,6 +67,9 @@ class VarModel(object):
         :param ts: time-series
         :return: log probability
         """
+        self.k_inv = np.linalg.inv(self.k)
+        self.k_det = np.linalg.det(self.k)
+
         # calculate predictions at each time point
         predictors = self.munge(ts, order=self.order)
         predictions = self.a_full.dot(predictors.T)
@@ -76,6 +77,23 @@ class VarModel(object):
 
         log_probs = self.log_prob_mvn(truths, means=predictions, cov_inv=self.k_inv, cov_det=self.k_det)
         return log_probs.sum()
+
+    def fit(self, tss):
+        """
+        Fit model to time-series data using analytical max-likelihood solution.
+        """
+        # build up design matrix (dm) and prediction matrix (d)
+        d = np.transpose(np.concatenate([ts[self.order:] for ts in tss], axis=0))
+        dm = np.transpose(np.concatenate([self.munge(ts, self.order) for ts in tss], axis=0))
+
+        # recover a_full
+        self.a_full = d.dot(dm.T).dot(np.linalg.inv(dm.dot(dm.T)))
+
+        # recover covariance matrix
+        self.k = np.cov(d - self.a_full.dot(dm))
+
+        # create list version of a from a_full
+        self.a = list(np.split(self.a_full, self.order, axis=1))
 
     @staticmethod
     def log_prob_mvn(data, means, cov=None, cov_inv=None, cov_det=None):
