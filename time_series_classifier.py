@@ -3,6 +3,9 @@ Code for classifying vector time-series.
 """
 from __future__ import print_function, division
 import numpy as np
+from scipy import stats
+
+import kinematics
 
 
 class VarModel(object):
@@ -178,6 +181,56 @@ class VarClassifierBinary(object):
             log_like_neg = self.model_neg.log_prob(ts)
 
             if (log_like_pos + self.log_prior_pos) > (log_like_neg + self.log_prior_neg):
+                predictions.append(1)
+            else:
+                predictions.append(-1)
+
+        return predictions
+
+
+class MeanSpeedClassifierBinary(object):
+    """
+    Distributions over mean speed are represented with Gaussians, for what that's worth.
+    """
+
+    def __init__(self):
+        self.mean_pos = None
+        self.mean_neg = None
+        self.std_pos = None
+        self.std_neg = None
+
+    def train(self, positives, negatives):
+        """
+        Train this ubersimple classifier.
+        :param positives:
+        :param negatives:
+        :return:
+        """
+        speeds_pos = [kinematics.norm(positive).mean() for positive in positives]
+        speeds_neg = [kinematics.norm(negative).mean() for negative in negatives]
+
+        self.mean_pos = np.mean(speeds_pos)
+        self.mean_neg = np.mean(speeds_neg)
+
+        self.std_pos = np.std(speeds_pos)
+        self.std_neg = np.std(speeds_neg)
+
+    def predict(self, tss):
+        """
+        Make predictions on a set of time-series.
+        :param tss:
+        :return:
+        """
+        predictions = []
+
+        for ts in tss:
+
+            mean_speed = kinematics.norm(ts).mean()
+
+            l_pos = stats.norm.pdf(mean_speed, self.mean_pos, self.std_pos)
+            l_neg = stats.norm.pdf(mean_speed, self.mean_neg, self.std_neg)
+
+            if l_pos > l_neg:
                 predictions.append(1)
             else:
                 predictions.append(-1)
