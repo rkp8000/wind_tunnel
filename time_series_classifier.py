@@ -286,3 +286,53 @@ class MeanHeadingClassifierBinary(object):
                 predictions.append(-1)
 
         return predictions
+
+
+class StdHeadingClassifierBinary(object):
+    """
+    Distributions over mean heading are represented with Gaussians, for what that's worth.
+    """
+
+    def __init__(self):
+        self.mean_pos = None
+        self.mean_neg = None
+        self.std_pos = None
+        self.std_neg = None
+
+    def train(self, positives, negatives):
+        """
+        Train this ubersimple classifier.
+        :param positives:
+        :param negatives:
+        :return:
+        """
+        headings_pos = [kinematics.heading(positive).std() for positive in positives]
+        headings_neg = [kinematics.heading(negative).std() for negative in negatives]
+
+        self.mean_pos = np.mean(headings_pos)
+        self.mean_neg = np.mean(headings_neg)
+
+        self.std_pos = np.std(headings_pos)
+        self.std_neg = np.std(headings_neg)
+
+    def predict(self, tss):
+        """
+        Make predictions on a set of time-series.
+        :param tss:
+        :return:
+        """
+        predictions = []
+
+        for ts in tss:
+
+            mean_heading = kinematics.heading(ts).std()
+
+            l_pos = stats.norm.pdf(mean_heading, self.mean_pos, self.std_pos)
+            l_neg = stats.norm.pdf(mean_heading, self.mean_neg, self.std_neg)
+
+            if l_pos > l_neg:
+                predictions.append(1)
+            else:
+                predictions.append(-1)
+
+        return predictions

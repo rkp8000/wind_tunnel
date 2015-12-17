@@ -204,6 +204,18 @@ class BasicClassifiersTestCase(unittest.TestCase):
         ground_truth = np.concatenate([[-1] * len(tss_2), [1] * len(tss_1)])
         np.testing.assert_array_equal(predictions, ground_truth)
 
+    def test_std_heading_classifier_can_classify_ideal_trajectories(self):
+
+        # make sets of ideal trajectories
+        tss_1 = [(-1)*np.random.random_integers(1)*np.random.normal((5, 0, 0), 1, (100, 3)) for _ in range(100)]
+        tss_2 = [(-1)*np.random.random_integers(1)*np.random.normal((0, 0, 0), 1, (100, 3)) for _ in range(100)]
+
+        clf = tsc.StdHeadingClassifierBinary()
+        clf.train(positives=tss_1, negatives=tss_2)
+        predictions = clf.predict(tss_2 + tss_1)
+        ground_truth = np.concatenate([[-1] * len(tss_2), [1] * len(tss_1)])
+        np.testing.assert_array_equal(predictions, ground_truth)
+
 
 if __name__ == '__main__':
     unittest.main()
