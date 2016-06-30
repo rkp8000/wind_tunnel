@@ -10,7 +10,7 @@ import axis_tools
 from db_api import models
 from db_api.connect import session
 
-SAVE_PATH = '/Users/rkp/Desktop'
+SAVE_PATH = '/Users/rkp/Desktop/wind_tunnel_figs'
 
 DETERMINATION = 'chosen0'  # which group of crossing thresholds to use
 
@@ -20,8 +20,10 @@ TRIGGER = 'peak'
 
 MIN_POSITION_X = 0
 MAX_POSITION_X = 0.7
-MIN_HEADING_XYZ = 60
-MAX_HEADING_XYZ = 120
+MIN_HEADING_XYZ = 0  # 60
+MAX_HEADING_XYZ = 180  # 120
+
+SUBTRACT_INITIAL_HEADING = True
 
 BINS_POS_X = np.linspace(MIN_POSITION_X, MAX_POSITION_X, 30)
 BINS_HEADING = np.linspace(0, 180, 30)
@@ -32,38 +34,59 @@ FIG_SIZE = (14, 18)
 FIG_SIZE_POS = (10, 14)
 FACE_COLOR = 'white'
 FONT_SIZE = 20
+LEGEND_FONT_SIZE = 14
 
 EXPT_COLORS = {'fruitfly_0.3mps_checkerboard_floor': 'b',
                'fruitfly_0.4mps_checkerboard_floor': 'g',
-               'fruitfly_0.6mps_checkerboard_floor': 'r'}
+               'fruitfly_0.6mps_checkerboard_floor': 'r',
+               'mosquito_0.4mps_checkerboard_floor': 'k'}
 
 EARLY_LATE_COLORS = {'early': 'b',
                      'late': 'g'}
 
 AXES = {'fruitfly_0.3mps_checkerboard_floor': 1,
         'fruitfly_0.4mps_checkerboard_floor': 2,
-        'fruitfly_0.6mps_checkerboard_floor': 3}
+        'fruitfly_0.6mps_checkerboard_floor': 3,
+        'mosquito_0.4mps_checkerboard_floor': 4}
 
 
 fig, axs = plt.subplots(
-    4, 2, figsize=FIG_SIZE, facecolor=FACE_COLOR, sharex=True, sharey=True, tight_layout=True
+    5, 2, figsize=FIG_SIZE, facecolor=FACE_COLOR, sharex=True, sharey=True, tight_layout=True
 )
+fig = plt.figure(figsize=FIG_SIZE, facecolor=FACE_COLOR, tight_layout=True)
+
+axs = np.zeros((5, 2), dtype=object)
+
+axs[0, 0] = fig.add_subplot(5, 2, 1)
+axs[0, 1] = fig.add_subplot(5, 2, 2)
+
+for ii in range(1, 5):
+    axs[ii, 0] = fig.add_subplot(5, 2, 2*ii + 1, sharex=axs[0, 0], sharey=axs[0, 0])
+    axs[ii, 1] = fig.add_subplot(5, 2, 2*(ii + 1), sharex=axs[0, 0], sharey=axs[0, 1])
+
 fig_tp, axs_tp = plt.subplots(
-    3, 1, figsize=FIG_SIZE_POS, facecolor=FACE_COLOR, sharex=True, sharey=True, tight_layout=True
+    4, 1, figsize=FIG_SIZE_POS, facecolor=FACE_COLOR, sharex=True, sharey=True, tight_layout=True
 )
 fig_pos, axs_pos = plt.subplots(
-    3, 1, figsize=FIG_SIZE_POS, facecolor=FACE_COLOR, sharex=True, tight_layout=True
+    4, 1, figsize=FIG_SIZE_POS, facecolor=FACE_COLOR, sharex=True, tight_layout=True
 )
 
 wind_speed_handles = []
 wind_speed_labels = []
 
 for expt_ctr, expt in enumerate(session.query(models.Experiment)):
-    if 'mosquito' in expt.id:
-        continue
 
     print(expt.id)
-    wind_speed_labels.append('{} m/s'.format(expt.wind_speed))
+
+    if 'fruitfly' in expt.id:
+
+        wind_speed_labels.append('fly {} m/s'.format(expt.wind_speed))
+
+    elif 'mosquito' in expt.id:
+
+        wind_speed_labels.append('mosquito {} m/s'.format(expt.wind_speed))
+
+
     subset_handles = []
     subset_labels = []
     subset_handles_pos = []
@@ -109,6 +132,10 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
                 session, 'heading_xyz', -N_TIMESTEPS_BEFORE, N_TIMESTEPS_AFTER - 1,
                 TRIGGER, TRIGGER, nan_pad=True
             )
+
+            if SUBTRACT_INITIAL_HEADING:
+
+                headings -= headings[N_TIMESTEPS_BEFORE]
 
             crossings_time_series[crossing_ctr, :] = headings
             crossing_ctr += 1
@@ -161,6 +188,11 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
                     session, 'heading_xyz', -N_TIMESTEPS_BEFORE, N_TIMESTEPS_AFTER - 1,
                     TRIGGER, TRIGGER, nan_pad=True
                 )
+
+                if SUBTRACT_INITIAL_HEADING:
+
+                    headings -= headings[N_TIMESTEPS_BEFORE]
+
                 crossings_time_series[crossing_ctr, :] = headings
 
                 # store x position
@@ -232,9 +264,9 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
                 subset_labels_pos.append(label_pos)
 
     # make legends
-    axs[AXES[expt.id], 0].legend(subset_handles, subset_labels)
-    axs_tp[AXES[expt.id] - 1].legend(subset_handles_heading, subset_labels_heading)
-    axs_pos[AXES[expt.id] - 1].legend(subset_handles_pos, subset_labels_pos)
+    axs[AXES[expt.id], 0].legend(subset_handles, subset_labels, loc='best')
+    axs_tp[AXES[expt.id] - 1].legend(subset_handles_heading, subset_labels_heading, loc='best')
+    axs_pos[AXES[expt.id] - 1].legend(subset_handles_pos, subset_labels_pos, loc='best')
 
 # clean heading time-series plot
 axs[0, 0].set_title('Ethanol')
@@ -245,17 +277,20 @@ for ax_row, label in zip(axs[1:], wind_speed_labels):
     [ax.set_title(label) for ax in ax_row]
 
 # make wind-speed-overlay plot's legend
-axs[0, 0].legend(wind_speed_handles, wind_speed_labels)
+axs[0, 0].legend(wind_speed_handles, wind_speed_labels, loc='best')
 
 # set x and y labels and font size
-[ax.set_xlabel('Time since {} (s)'.format(TRIGGER)) for ax in axs[-1, :]]
-[ax.set_ylabel('Heading (deg)') for ax in axs[:, 0]]
-[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs.flatten()]
+[ax.set_xlabel('Time since {} (s)'.format(TRIGGER)) for ax in axs.flatten()]
+if SUBTRACT_INITIAL_HEADING:
+    [ax.set_ylabel(r'$\Delta$ Heading (deg)') for ax in axs.flatten()]
+else:
+    [ax.set_ylabel('Heading (deg)') for ax in axs.flatten()]
+[axis_tools.set_fontsize(ax, FONT_SIZE, LEGEND_FONT_SIZE) for ax in axs.flatten()]
 
 # save heading time-series plot
 fig.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_{}.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
 )
 
 # clean up heading histogram plots
@@ -263,14 +298,20 @@ fig.savefig(
 [ax.set_title(label) for ax, label in zip(axs_tp, wind_speed_labels)]
 
 # set x and y labels and font size
-axs_tp[-1].set_xlabel('uw/dw position at {} (m)'.format(TRIGGER))
-[ax.set_ylabel('probability') for ax in axs_tp]
-[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs_tp.flatten()]
+if SUBTRACT_INITIAL_HEADING:
+    [ax.set_xlabel(r'$\Delta$ heading between {} and {} after {} (deg)'.format(
+        EXAMPLE_HEADING_TIME_START, EXAMPLE_HEADING_TIME_END, TRIGGER)) for ax in
+     axs_tp]
+else:
+    [ax.set_xlabel('heading between {} and {} after {} (deg)'.format(EXAMPLE_HEADING_TIME_START, EXAMPLE_HEADING_TIME_END, TRIGGER)) for ax in axs_tp]
 
-# save position histograms plot
+[ax.set_ylabel('probability') for ax in axs_tp]
+[axis_tools.set_fontsize(ax, FONT_SIZE, LEGEND_FONT_SIZE) for ax in axs_tp.flatten()]
+
+# save heading histograms plot
 fig_tp.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_heading_hist.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_heading_hist_{}.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
 )
 
 # clean up position histogram plots
@@ -278,12 +319,12 @@ fig_tp.savefig(
 [ax.set_title(label) for ax, label in zip(axs_pos, wind_speed_labels)]
 
 # set x and y labels and font size
-axs_pos[-1].set_xlabel('uw/dw position at {} (m)'.format(TRIGGER))
+[ax.set_xlabel('uw/dw position at {} (m)'.format(TRIGGER)) for ax in axs_pos]
 [ax.set_ylabel('probability') for ax in axs_pos]
-[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs_pos.flatten()]
+[axis_tools.set_fontsize(ax, FONT_SIZE, LEGEND_FONT_SIZE) for ax in axs_pos.flatten()]
 
 # save position histograms plot
 fig_pos.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_position_hist.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_position_hist_{}.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
 )
