@@ -52,7 +52,7 @@ def heading_concentration_dependence(
 
     ts_before = int(round(T_BEFORE / DT))
     ts_after = int(round(T_AFTER / DT))
-    ts_models = [int(round(t_model / DT)) for t_model in T_MODELS]
+    ts_models = {cg_id: int(round(t_model / DT)) for cg_id, t_model in T_MODELS.items()}
 
     data = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
 
@@ -166,26 +166,26 @@ def heading_concentration_dependence(
         # show partial correlation and confidence
 
         handle = axs[0].plot(
-            t, data[cg_id]['partial_corrs'], color=color, lw=2, ls='--', label=label)
+            t, data[cg_id]['partial_corrs'], color=color, lw=2, ls='-', label=label)[0]
         axs[0].fill_between(t, data[cg_id]['lbs'], data[cg_id]['ubs'], color=color, alpha=0.2)
 
         handles.append(handle)
 
         # show p-values
 
-        axs[1].plot(t, data[cg_id]['p_vals'], color=color, lw=2, ls='-')
+        axs[1].plot(t[t > 0], data[cg_id]['p_vals'][t > 0], color=color, lw=2, ls='--')
 
     axs[0].set_xlim(-T_BEFORE, T_AFTER)
 
     axs[0].set_xlabel('time of heading measurement\nsince odor peak (s)')
     axs[0].set_ylabel('heading-concentration\npartial correlation')
-    axs[0].legend(handles=handles)
+    axs[0].legend(handles=handles, loc='upper left')
 
     axs[1].set_ylim(0, 0.2)
 
     axs[1].set_ylabel('p-value')
 
-
+    """
     ## FIT BOTH MODELS TO EACH DATASET
 
     model_infos = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
@@ -237,6 +237,7 @@ def heading_concentration_dependence(
 
         print('Model fit analysis for "{}":'.format(cg_id))
         print(model_infos[cg_id])
+    """
 
     for ax in axs:
 
