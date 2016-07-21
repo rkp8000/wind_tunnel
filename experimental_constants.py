@@ -1,3 +1,5 @@
+DT = 0.01
+
 PLUME_PARAMS_DICT = {
     'fruitfly_0.3mps_checkerboard_floor': {
         'max_conc': 194.4013571501637,
