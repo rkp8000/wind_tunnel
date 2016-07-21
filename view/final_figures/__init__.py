@@ -2,7 +2,14 @@ from __future__ import division, print_function
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experimental_constants import PLUME_PARAMS_DICT
+from db_api import models
+from db_api.connect import session
+
+from axis_tools import set_fontsize
+import simple_models
+import stats
+
+from experimental_constants import DT, PLUME_PARAMS_DICT
 
 
 def trajectory_example_and_visualization_of_crossing_variability(
@@ -22,12 +29,12 @@ def trajectory_example_and_visualization_of_crossing_variability(
 
 def heading_concentration_dependence(
         SEED,
-        EXPT_IDS,
+        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         T_BEFORE, T_AFTER,
-        T_MODEL,
+        T_MODELS,
         N_DATA_POINTS_MODEL,
-        FIG_SIZE, EXPT_COLORS,
+        FIG_SIZE, CROSSING_GROUP_COLORS,
         SCATTER_SIZE, SCATTER_COLOR, SCATTER_ALPHA,
         FONT_SIZE):
     """
@@ -39,7 +46,203 @@ def heading_concentration_dependence(
     the linear one fits significantly better.
     """
 
-    pass
+    ## CALCULATE PARTIAL CORRELATIONS
+
+    # convert times to timesteps
+
+    ts_before = int(round(T_BEFORE / DT))
+    ts_after = int(round(T_AFTER / DT))
+    ts_models = [int(round(t_model / DT)) for t_model in T_MODELS]
+
+    data = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        # get crossing group and crossings
+
+        crossing_group = session.query(models.CrossingGroup).filter_by(id=cg_id).first()
+        crossings_all = session.query(models.Crossing).filter_by(crossing_group=crossing_group)
+
+        # get all initial headings, initial xs, peak concentrations, and heading time-series
+
+        x_0s = []
+        h_0s = []
+        c_maxs = []
+        headings = []
+
+        for crossing in crossings_all:
+
+            # throw away crossings that do not meet trigger criteria
+
+            position_x = getattr(crossing.feature_set_basic, 'position_x_{}'.format('peak'))
+
+            if not (X_0_MIN <= position_x <= X_0_MAX):
+
+                continue
+
+            heading_xyz = getattr(crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
+
+            if not (H_0_MIN <= heading_xyz <= H_0_MAX):
+
+                continue
+
+            c_maxs.append(crossing.max_odor)
+            x_0s.append(position_x)
+            h_0s.append(heading_xyz)
+
+            temp = crossing.timepoint_field(
+                session, 'heading_xyz', -ts_before, ts_after - 1,
+                'peak', 'peak', nan_pad=True)
+
+            headings.append(temp)
+
+        x_0s = np.array(x_0s)
+        h_0s = np.array(h_0s)
+        c_maxs = np.array(c_maxs)
+        headings = np.array(headings)
+
+        partial_corrs = np.nan * np.ones((headings.shape[1],), dtype=float)
+        p_vals = np.nan * np.ones((headings.shape[1],), dtype=float)
+        lbs = np.nan * np.ones((headings.shape[1],), dtype=float)
+        ubs = np.nan * np.ones((headings.shape[1],), dtype=float)
+        ns = np.nan * np.ones((headings.shape[1],), dtype=float)
+
+        # loop through all time steps
+
+        for ts in range(headings.shape[1]):
+
+            headings_this_tp = headings[:, ts]
+
+            if ts == (ts_models[cg_id] + ts_before):
+
+                model_headings = headings_this_tp.copy()
+
+            # create not-nan mask
+
+            mask = ~np.isnan(headings_this_tp)
+            ns[ts] = mask.sum()
+
+            # get partial correlations using all not-nan values
+
+            r, p, lb, ub = stats.pearsonr_partial_with_confidence(
+                c_maxs[mask], headings_this_tp[mask],
+                [x_0s[mask], h_0s[mask]])
+
+            partial_corrs[ts] = r
+            p_vals[ts] = p
+            lbs[ts] = lb
+            ubs[ts] = ub
+
+        data[cg_id] = {
+            'x_0s': x_0s,
+            'h_0s': h_0s,
+            'c_maxs': c_maxs,
+            'headings': headings,
+            'partial_corrs': partial_corrs,
+            'p_vals': p_vals,
+            'lbs': lbs,
+            'ubs': ubs,
+            'model_headings': model_headings,
+        }
+
+    ## MAKE PLOT OF PARTIAL CORRELATIONS
+
+    fig, axs = plt.figure(figsize=FIG_SIZE, facecolor='white', tight_layout=True), []
+
+    axs.append(fig.add_subplot(2, 1, 1))
+    axs.append(axs[0].twinx())
+
+    axs[1].axhline(0.05)
+
+    t = np.arange(-ts_before, ts_after) * DT
+
+    handles = []
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        color = CROSSING_GROUP_COLORS[cg_id]
+        label = CROSSING_GROUP_LABELS[cg_id]
+
+        # show partial correlation and confidence
+
+        handle = axs[0].plot(
+            t, data[cg_id]['partial_corrs'], color=color, lw=2, ls='--', label=label)
+        axs[0].fill_between(t, data[cg_id]['lbs'], data[cg_id]['ubs'], color=color, alpha=0.2)
+
+        handles.append(handle)
+
+        # show p-values
+
+        axs[1].plot(t, data[cg_id]['p_vals'], color=color, lw=2, ls='-')
+
+    axs[0].set_xlim(-T_BEFORE, T_AFTER)
+
+    axs[0].set_xlabel('time of heading measurement\nsince odor peak (s)')
+    axs[0].set_ylabel('heading-concentration\npartial correlation')
+    axs[0].legend(handles=handles)
+
+    axs[1].set_ylim(0, 0.2)
+
+    axs[1].set_ylabel('p-value')
+
+
+    ## FIT BOTH MODELS TO EACH DATASET
+
+    model_infos = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        hs = data[cg_id]['model_headings']
+        c_maxs = data[cg_id]['c_maxs']
+        x_0s = data[cg_id]['x_0s']
+        h_0s = data[cg_id]['h_0s']
+
+        valid_mask = ~np.isnan(hs)
+
+        hs = hs[valid_mask]
+        c_maxs = c_maxs[valid_mask]
+        x_0s = x_0s[valid_mask]
+        h_0s = h_0s[valid_mask]
+
+        n = len(hs)
+
+        binary_model = simple_models.BinaryHeadingConcModel()
+
+        binary_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+
+        hs_predicted_binary = binary_model.predict(c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+
+        rss_binary = np.sum((h_0s - hs_predicted_binary) ** 2)
+
+        binary_linear_model = simple_models.BinaryLinearHeadingConcModel()
+
+        binary_linear_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+
+        hs_predicted_binary_linear = binary_linear_model.predict(c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+
+        rss_binary_linear = np.sum((h_0s - hs_predicted_binary_linear) ** 2)
+
+        f, p_val = stats.f_test(
+            rss_reduced=rss_binary, rss_full=rss_binary_linear,
+            df_reduced=7, df_full=8, n=n
+        )
+
+        model_infos[cg_id] = {
+            'n': n,
+            'rss_binary': rss_binary,
+            'rss_binary_linear': rss_binary_linear,
+            'f': f,
+            'p_val': p_val,
+        }
+
+        print('Model fit analysis for "{}":'.format(cg_id))
+        print(model_infos[cg_id])
+
+    for ax in axs:
+
+        set_fontsize(ax, FONT_SIZE)
+
+    return fig
 
 
 def early_vs_late_heading_timecourse(
