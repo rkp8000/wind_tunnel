@@ -8,7 +8,7 @@ from db_api import models
 from db_api.connect import session, commit
 
 ODOR_STATES = ('on', 'none', 'afterodor')
-DETERMINATION = 'chosen0'
+DETERMINATION = 'chosen40_500'
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
         print('Experiment "{}"'.format(expt.id))
 
         threshold = session.query(models.Threshold).\
-            filter_by(experiment=expt, determination='chosen0').first()
+            filter_by(experiment=expt, determination=DETERMINATION).first()
 
         # loop over odor states
         for odor_state in ODOR_STATES:

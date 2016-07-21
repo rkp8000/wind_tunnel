@@ -15,7 +15,7 @@ AX_SIZE = (6, 4)
 LW = 2
 COLORS = ('b', 'g', 'r')
 
-for fig_layout in fig_layouts:
+for fig_layout in FIG_LAYOUTS:
 
     fig_size = (AX_SIZE[0], AX_SIZE[1] * len(fig_layout))
 
@@ -31,7 +31,7 @@ for fig_layout in fig_layouts:
             variable, experiment_id, odor_state = data_layout
 
             tp_dstr = session.query(models.TimepointDistribution).\
-                filter_by(variable=variable, experiment_id=experiment_id, odor_state=odor_state)
+                filter_by(variable=variable, experiment_id=experiment_id, odor_state=odor_state).first()
 
             ax.plot(tp_dstr.bincs, tp_dstr.cts, lw=LW, color=COLORS[data_ctr])
 

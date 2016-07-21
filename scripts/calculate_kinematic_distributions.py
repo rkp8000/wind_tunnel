@@ -33,6 +33,7 @@ QUANTITIES = ['position_x',
               'angular_acceleration_z',
               'angular_acceleration_a',
               'distance_from_wall']
+QUANTITIES = ['odor']
 
 
 def make_distribution(data, n_bins, lb=None, ub=None):

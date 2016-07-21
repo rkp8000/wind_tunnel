@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
-TEST = True
+TEST = False
 COMMIT = False
 
 

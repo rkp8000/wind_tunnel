@@ -68,7 +68,7 @@ def pearsonr_difference_significance(r_1, n_1, r_2, n_2):
 
 def pearsonr_partial_with_confidence(x, y, conditioned_on, confidence=0.95):
     """
-    Calculate the partial correlation of x and y', where y' is the difference between y
+    Calculate the correlation of x and y', where y' is the difference between y
     and the best fit hyperplane of y vs. the variables in conditioned_on.
     :param x: input
     :param y: output

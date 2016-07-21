@@ -14,7 +14,7 @@ DATA_DIR_ENV_VAR = 'WIND_TUNNEL_FIGURE_DATA_DIRECTORY'
 
 SAVE_DIR = 'glm_fit'
 
-FIT_NAME = 'short_long_timescale_bases_fit_0'
+FIT_NAME = 'short_long_timescale_bases_fit_1_log'
 
 EXPERIMENT_IDS = [
     'fruitfly_0.3mps_checkerboard_floor',
@@ -35,7 +35,7 @@ N_TEST = 100
 
 INTEGRATED_ODOR_THRESHOLD = 10
 
-LINK = 'identity'
+LINK = 'log'
 FAMILY = 'Gaussian'
 
 PREDICTED = 'heading_xyz'
@@ -56,8 +56,9 @@ INPUT_TAUS = [  # in units of timesteps (dt = 0.01s)
     (),
     (None, ),
     (None, None),
-    (None, [2, 5, 7, 10, 25]),
-    (None, [2, 5, 7, 10, 25, 150, 250]),
+    (None, [2, 5, 7, 10, 25, 50]),
+#    (None, [2, 5, 7, 10, 25, 50, 200]),
+    (None, [200]),
 ]
 
 OUTPUT_TAUS = [

@@ -8,7 +8,7 @@ import numpy as np
 from db_api import models
 from db_api.connect import session, commit
 
-DETERMINATION = 'chosen0'
+DETERMINATION = 'chosen40_500'
 
 
 def main():

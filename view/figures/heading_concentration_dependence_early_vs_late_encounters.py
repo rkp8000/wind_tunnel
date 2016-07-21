@@ -12,59 +12,70 @@ import axis_tools
 from db_api import models
 from db_api.connect import session
 
-SAVE_PATH = '/Users/rkp/Desktop'
+SAVE_PATH = '/Users/rkp/Desktop/wind_tunnel_figs'
 
 DETERMINATION = 'chosen0'  # which group of crossing thresholds to use
 
-N_TIMESTEPS_BEFORE = 0
+N_TIMESTEPS_BEFORE = 20
 N_TIMESTEPS_AFTER = 100
 TRIGGER = 'peak'
 
 MIN_POSITION_X = 0
 MAX_POSITION_X = 0.7
-MIN_HEADING_XYZ = 60
-MAX_HEADING_XYZ = 120
-
+MIN_HEADING_XYZ = 0  # 60
+MAX_HEADING_XYZ = 180  # 120
 
 FACE_COLOR = 'w'
-FIG_SIZE = (7, 18)
+FIG_SIZE = (16, 18)
 FONT_SIZE = 20
+LEGEND_FONT_SIZE = 14
 LW = 2
 ALPHA = 0.3
 
 EXPT_COLORS = {'fruitfly_0.3mps_checkerboard_floor': 'b',
                'fruitfly_0.4mps_checkerboard_floor': 'g',
-               'fruitfly_0.6mps_checkerboard_floor': 'r'}
+               'fruitfly_0.6mps_checkerboard_floor': 'r',
+               'mosquito_0.4mps_checkerboard_floor': 'k',}
 
 EARLY_LATE_COLORS = {'early': 'b',
                      'late': 'g'}
 
-AXES = {'fruitfly_0.3mps_checkerboard_floor': 1,
-        'fruitfly_0.4mps_checkerboard_floor': 2,
-        'fruitfly_0.6mps_checkerboard_floor': 3}
+AXES = {'fruitfly_0.3mps_checkerboard_floor': 2,
+        'fruitfly_0.4mps_checkerboard_floor': 3,
+        'fruitfly_0.6mps_checkerboard_floor': 4,
+        'mosquito_0.4mps_checkerboard_floor': 5,}
 
 
-fig, axs = plt.subplots(
-    4, 1, facecolor=FACE_COLOR, figsize=FIG_SIZE, sharex=True, sharey=True,
+fig, axs_unflat = plt.subplots(
+    3, 2, facecolor=FACE_COLOR, figsize=FIG_SIZE, sharex=True,
     tight_layout=True
 )
 
-axs_twin = [ax.twinx() for ax in axs[1:]]
+axs = axs_unflat.flatten()
+axs_twin = [ax.twinx() for ax in axs[2:]]
 
 wind_speed_handles = []
 wind_speed_labels = []
 
 for expt in session.query(models.Experiment):
-    if 'mosquito' in expt.id:
-        continue
+
+    if 'fly' in expt.id:
+
+        wind_speed_label = 'fly {} m/s'.format(expt.wind_speed)
+
+    elif 'mosquito' in expt.id:
+
+        wind_speed_label = 'mosquito {} m/s'.format(expt.wind_speed)
+
     print(expt.id)
 
     # get threshold and crossing group for this experiment
     threshold = session.query(models.Threshold).filter_by(
         experiment=expt, determination=DETERMINATION
     ).first()
+
     crossing_group = session.query(models.CrossingGroup).filter_by(
-        threshold=threshold, odor_state='on'
+        threshold=threshold, odor_state='none'
     ).first()
 
     # create querysets
@@ -87,7 +98,9 @@ for expt in session.query(models.Experiment):
         headings = []
 
         # get all initial headings, initial xs, peak concentrations, and heading time-series
+
         for crossing in queryset:
+
             # throw away crossings that do not meet trigger criteria
             position_x = getattr(crossing.feature_set_basic, 'position_x_{}'.format(TRIGGER))
             heading_xyz = getattr(crossing.feature_set_basic, 'heading_xyz_{}'.format(TRIGGER))
@@ -151,7 +164,13 @@ for expt in session.query(models.Experiment):
                 t, lbs, ubs, color=EXPT_COLORS[expt.id], alpha=ALPHA
             )
             wind_speed_handles.append(handle)
-            wind_speed_labels.append('{} m/s'.format(expt.wind_speed))
+            wind_speed_labels.append(wind_speed_label)
+
+            # plot p-value
+            axs[1].plot(
+                t, p_values, color=EXPT_COLORS[expt.id], lw=LW
+            )
+
         else:
             handle, = axs[AXES[expt.id]].plot(
                 t, correlations, color=EARLY_LATE_COLORS[label], lw=LW
@@ -173,27 +192,38 @@ for expt in session.query(models.Experiment):
                 for r_1, n_1, r_2, n_2 in zip(early_correlations, early_ns, correlations, ns):
                     p_vals.append(stats.pearsonr_difference_significance(r_1, n_1, r_2, n_2))
 
-                ax = axs_twin[AXES[expt.id] - 1]
+                ax = axs_twin[AXES[expt.id] - 2]
                 ax.plot(t, p_vals, c='k', ls='-', lw=2)
                 ax.axhline(0.05, c='k', ls='--')
                 ax.set_ylim(0, 0.5)
 
-    axs_twin[AXES[expt.id] - 1].legend(early_late_handles, early_late_labels)
+    axs_twin[AXES[expt.id] - 2].legend(early_late_handles, early_late_labels, loc='best')
 
-axs[0].legend(wind_speed_handles, wind_speed_labels)
+axs[0].legend(wind_speed_handles, wind_speed_labels, loc='best')
 
 axs[0].set_title('Concentration/heading\npartial correlations')
-for ax, label in zip(axs[1:], wind_speed_labels):
+
+axs[1].set_ylim(0, 1)
+axs[1].legend(wind_speed_handles, wind_speed_labels, loc='best')
+axs[1].set_title('P-values')
+
+
+for ax, label in zip(axs[2:], wind_speed_labels):
+
     ax.set_title(label)
 
-axs[-1].set_xlabel('Time since encounter {} (s)'.format(TRIGGER))
+for ax in axs:
+
+    ax.set_xlabel('Time since encounter {} (s)'.format(TRIGGER))
+
 [ax.set_ylabel('Partial correlation') for ax in axs]
+axs[1].set_ylabel('p value')
 [ax.set_ylabel('P-value') for ax in axs_twin]
 
-[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs]
-[axis_tools.set_fontsize(ax, FONT_SIZE) for ax in axs_twin]
+[axis_tools.set_fontsize(ax, FONT_SIZE, LEGEND_FONT_SIZE) for ax in axs]
+[axis_tools.set_fontsize(ax, FONT_SIZE, LEGEND_FONT_SIZE) for ax in axs_twin]
 
 fig.savefig(
-    '{}/conc_heading_partial_correlation_triggered_on_{}_hxyz_between_{}_and_{}.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ)
+    '{}/conc_heading_partial_correlation_triggered_on_{}_hxyz_between_{}_and_{}_{}_control.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
 )

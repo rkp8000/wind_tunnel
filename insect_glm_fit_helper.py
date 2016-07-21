@@ -6,7 +6,7 @@ from db_api.connect import session
 from db_api import models
 
 
-def get_trajs_with_integrated_odor_above_threshold(experiment_id, odor_state, integrated_odor_threshold):
+def get_trajs_with_integrated_odor_above_threshold(experiment_id, odor_state, integrated_odor_threshold, max_trajs=np.inf):
     """
     Return all trajectories from a given experiment/odor state that have a certain minimum odor.
     :param experiment_id: experiment id
@@ -23,6 +23,8 @@ def get_trajs_with_integrated_odor_above_threshold(experiment_id, odor_state, in
     for traj in trajs_all:
         if traj.odor_stats.integrated_odor > integrated_odor_threshold:
             trajs.append(traj)
+        if len(trajs) >= max_trajs:
+            break
 
     return trajs
 
@@ -39,7 +41,10 @@ def time_series_from_trajs(trajs, inputs, output):
     for traj in trajs:
         input_ts = []
         for input_name in inputs:
-            input_ts.append(traj.timepoint_field(session, input_name))
+            new_input = traj.timepoint_field(session, input_name)
+            if 'mosquito' in traj.experiment_id and input_name == 'odor':
+                new_input -= 400
+            input_ts.append(new_input)
         output_ts = traj.timepoint_field(session, output)
 
         time_series.append((input_ts, output_ts))

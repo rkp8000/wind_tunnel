@@ -21,9 +21,9 @@ import insect_glm_fit_helper as igfh
 from db_api.connect import session
 from db_api import models
 
-EXPERIMENT = 'mosquito_0.4mps_checkerboard_floor'
+EXPERIMENT = 'fruitfly_0.4mps_checkerboard_floor'
 ODOR_STATE = 'on'
-FIT_NAME = 'short_long_timescale_bases_fit_0'
+FIT_NAME = 'short_long_timescale_bases_fit_1_log'
 
 EXAMPLE_TRIAL = 0
 EXAMPLE_TRAIN = 0
@@ -123,7 +123,7 @@ for ax in axs_odor[:, -1]:
 for ax in axs[-1, :]:
     ax.set_xlabel('time steps')
 
-axs[0, 0].set_title('Training Trajectory')
+axs[0, 0].set_title('Training (blue - odor, black - heading, red - predicted heading)')
 axs[0, 1].set_title('Test Trajectory')
 
 for ax in axs.flatten():

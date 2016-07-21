@@ -9,7 +9,8 @@ from db_api import models
 plt.ion()
 
 ODOR_STATES = ['on', 'none', 'afterodor']
-QUANTITIES = ['position_x',
+QUANTITIES = ['odor',
+              'position_x',
               'position_y',
               'position_z',
               'velocity_x',

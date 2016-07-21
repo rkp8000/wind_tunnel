@@ -7,10 +7,10 @@ from db_api.connect import session, commit
 from db_api import models
 
 THRESHOLDS_DICT = {
-    'fruitfly_0.3mps_checkerboard_floor': 10,
-    'fruitfly_0.4mps_checkerboard_floor': 10,
-    'fruitfly_0.6mps_checkerboard_floor': 10,
-    'mosquito_0.4mps_checkerboard_floor': 430,
+    'fruitfly_0.3mps_checkerboard_floor': 40,
+    'fruitfly_0.4mps_checkerboard_floor': 40,
+    'fruitfly_0.6mps_checkerboard_floor': 40,
+    'mosquito_0.4mps_checkerboard_floor': 500,
 }
 
 
@@ -18,7 +18,7 @@ def main():
 
     for expt_id, value in THRESHOLDS_DICT.iteritems():
         threshold = models.Threshold(experiment_id=expt_id,
-                                     determination='chosen0',
+                                     determination='chosen40_500',
                                      value=value)
         session.add(threshold)
         commit(session)

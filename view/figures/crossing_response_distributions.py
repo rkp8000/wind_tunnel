@@ -9,8 +9,8 @@ import stats
 from db_api import models
 from db_api.connect import session
 
-THRESHOLD_ID = 2  # look up in threshold table
-DISCRIMINATION_THRESHOLD = 20
+THRESHOLD_ID = 4  # look up in threshold table
+DISCRIMINATION_THRESHOLD = 450
 DISPLAY_START = -50
 DISPLAY_END = 150
 INTEGRAL_START = 0  # timepoints (fs 100 Hz) relative to peak

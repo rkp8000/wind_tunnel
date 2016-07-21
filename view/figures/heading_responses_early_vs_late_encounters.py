@@ -20,17 +20,22 @@ TRIGGER = 'peak'
 
 MIN_POSITION_X = 0
 MAX_POSITION_X = 0.7
-MIN_HEADING_XYZ = 0  # 60
-MAX_HEADING_XYZ = 180  # 120
+MIN_HEADING_XYZ = 60
+MAX_HEADING_XYZ = 120
 
-SUBTRACT_INITIAL_HEADING = True
+SUBTRACT_INITIAL_HEADING = False
 
 BINS_POS_X = np.linspace(MIN_POSITION_X, MAX_POSITION_X, 30)
-BINS_HEADING = np.linspace(0, 180, 30)
+
+if SUBTRACT_INITIAL_HEADING:
+    BINS_HEADING = np.linspace(-180, 180, 60)
+else:
+    BINS_HEADING = np.linspace(0, 180, 30)
+
 EXAMPLE_HEADING_TIME_START = 0.55  # s
 EXAMPLE_HEADING_TIME_END = 0.65  # s
 
-FIG_SIZE = (14, 18)
+FIG_SIZE = (20, 26)
 FIG_SIZE_POS = (10, 14)
 FACE_COLOR = 'white'
 FONT_SIZE = 20
@@ -80,11 +85,11 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
 
     if 'fruitfly' in expt.id:
 
-        wind_speed_labels.append('fly {} m/s'.format(expt.wind_speed))
+        wind_speed_labels.append('f {} m/s'.format(expt.wind_speed))
 
     elif 'mosquito' in expt.id:
 
-        wind_speed_labels.append('mosquito {} m/s'.format(expt.wind_speed))
+        wind_speed_labels.append('m {} m/s'.format(expt.wind_speed))
 
 
     subset_handles = []
@@ -147,11 +152,12 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
         # get mean and sem
         crossings_mean = np.nanmean(crossings_time_series, axis=0)
         crossings_sem = stats.nansem(crossings_time_series, axis=0)
+        crossings_std = np.nanstd(crossings_time_series, axis=0)
 
         # make plot
         handle, = axs[0, col_ctr].plot(time_vec, crossings_mean, lw=2, color=EXPT_COLORS[expt.id])
         axs[0, col_ctr].fill_between(
-            time_vec, crossings_mean - crossings_sem, crossings_mean + crossings_sem,
+            time_vec, crossings_mean - crossings_std, crossings_mean + crossings_std,
             color=EXPT_COLORS[expt.id], alpha=0.3
         )
 
@@ -209,7 +215,35 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
             crossings_mean = np.nanmean(crossings_time_series, axis=0)
             crossings_sem = stats.nansem(crossings_time_series, axis=0)
 
+            # perform necessary calculations for getting p-values between early and late crossings
+
+            if label == 'early':
+
+                crossings_ts_early = crossings_time_series.copy()
+
+            elif label == 'late':
+
+                crossings_ts_late = crossings_time_series.copy()
+
+                # loop through all time points and calculate p-values between early and late
+
+                p_vals_early_late_ts = np.nan * np.zeros((N_TIMESTEPS_BEFORE + N_TIMESTEPS_AFTER,))
+
+                for t_step in range(N_TIMESTEPS_BEFORE + N_TIMESTEPS_AFTER):
+
+                    early_with_nans = crossings_ts_early[:, t_step]
+                    late_with_nans = crossings_ts_late[:, t_step]
+
+                    early_no_nans = early_with_nans[~np.isnan(early_with_nans)]
+                    late_no_nans = late_with_nans[~np.isnan(late_with_nans)]
+
+                    _, p_val_ts = ks_test(early_no_nans, late_no_nans)
+
+                    p_vals_early_late_ts[t_step] = p_val_ts
+
+
             # make plots
+
             color = EARLY_LATE_COLORS[label]
             handle, = axs[AXES[expt.id], col_ctr].plot(
                 time_vec, crossings_mean, lw=2, color=color
@@ -222,6 +256,14 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
                 EXAMPLE_HEADING_TIME_START, EXAMPLE_HEADING_TIME_END, color='gray', alpha=0.3
             )
 
+            if label == 'late':
+
+                ax_pv = axs[AXES[expt.id], col_ctr].twinx()
+                ax_pv.plot(time_vec, p_vals_early_late_ts, lw=2, color='k')
+                ax_pv.set_ylim(0, 0.2)
+                ax_pv.axhline(0.05, color='gray', ls='--')
+                ax_pv.set_ylabel('p-value', fontsize=FONT_SIZE)
+
             if col_ctr == 0:
                 subset_handles.append(handle)
                 subset_labels.append(label)
@@ -232,10 +274,10 @@ for expt_ctr, expt in enumerate(session.query(models.Experiment)):
                     crossings_time_series[:, example_tp_start:example_tp_end], axis=1
                 )
                 if label == 'early':
-                    example_headings_early = example_headings
+                    example_headings_early = example_headings.copy()
                     positions_early = crossing_positions[:]
                 elif label == 'late':
-                    example_headings_late = example_headings
+                    example_headings_late = example_headings.copy()
                     _, p_val_heading = ks_test(example_headings_early, example_headings_late)
                     positions_late = crossing_positions[:]
                     _, p_val_pos = ks_test(positions_early, positions_late)
@@ -289,8 +331,8 @@ else:
 
 # save heading time-series plot
 fig.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_{}.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_{}_initial_heading_subtracted_{}_std.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION, SUBTRACT_INITIAL_HEADING)
 )
 
 # clean up heading histogram plots
@@ -310,8 +352,8 @@ else:
 
 # save heading histograms plot
 fig_tp.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_heading_hist_{}.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_heading_hist_{}_initial_heading_subtracted_{}_std.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION, SUBTRACT_INITIAL_HEADING)
 )
 
 # clean up position histogram plots
@@ -325,6 +367,6 @@ fig_tp.savefig(
 
 # save position histograms plot
 fig_pos.savefig(
-    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_position_hist_{}.png'.
-    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION)
+    '{}/crossings_triggered_on_{}_hxyz_between_{}_and_{}_position_hist_{}_initial_heading_subtracted_{}_std.png'.
+    format(SAVE_PATH, TRIGGER, MIN_HEADING_XYZ, MAX_HEADING_XYZ, DETERMINATION, SUBTRACT_INITIAL_HEADING)
 )
