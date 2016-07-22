@@ -101,3 +101,24 @@ def cov_with_confidence(x, y, confidence=0.95):
     scale_factor = cov / corr
 
     return cov, pv, lb * scale_factor, ub * scale_factor
+
+
+def f_test(rss_reduced, rss_full, df_reduced, df_full, n):
+    """
+    Calculate the F-statistic between a full and nested model.
+    :param rss_reduced: residual sum of squares (RSS) for reduced model
+    :param rss_full: RSS for full model
+    :param df_reduced: degrees of freedom for reduced model
+    :param df_full: degrees of freedom for full model
+    :param n: number of data points
+    :return: F, p-val
+    """
+
+    num = (rss_reduced - rss_full) / (df_full - df_reduced)
+    denom = rss_full / (n - df_full)
+
+    f = num / denom
+
+    p_val = 1 - stats.f.cdf(f, df_full - df_reduced, n - df_full)
+
+    return f, p_val
