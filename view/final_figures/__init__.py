@@ -157,6 +157,7 @@ def heading_concentration_dependence(
     axs[1].axhline(0.05)
 
     t = np.arange(-ts_before, ts_after) * DT
+    t[ts_before] = np.nan
 
     handles = []
 
