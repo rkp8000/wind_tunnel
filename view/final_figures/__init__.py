@@ -33,6 +33,7 @@ def heading_concentration_dependence(
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         T_BEFORE, T_AFTER,
         T_MODELS,
+        CROSSING_GROUP_EXAMPLE_ID,
         N_DATA_POINTS_MODEL,
         FIG_SIZE, CROSSING_GROUP_COLORS,
         SCATTER_SIZE, SCATTER_COLOR, SCATTER_ALPHA,
@@ -185,7 +186,6 @@ def heading_concentration_dependence(
 
     axs[1].set_ylabel('p-value')
 
-    """
     ## FIT BOTH MODELS TO EACH DATASET
 
     model_infos = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
@@ -206,6 +206,7 @@ def heading_concentration_dependence(
 
         n = len(hs)
 
+        """
         binary_model = simple_models.BinaryHeadingConcModel()
 
         binary_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
@@ -238,6 +239,17 @@ def heading_concentration_dependence(
         print('Model fit analysis for "{}":'.format(cg_id))
         print(model_infos[cg_id])
     """
+
+    axs.append(fig.add_subplot(2, 1, 2))
+
+    axs[-1].scatter(
+        data[CROSSING_GROUP_EXAMPLE_ID]['c_maxs'],
+        data[CROSSING_GROUP_EXAMPLE_ID]['model_headings'],
+        s=SCATTER_SIZE, c=SCATTER_COLOR, lw=0, alpha=SCATTER_ALPHA)
+
+    axs[-1].set_xlabel('c_max')
+    axs[-1].set_ylabel('heading at {} s\n since odor peak'.format(T_MODELS[CROSSING_GROUP_EXAMPLE_ID]))
+    axs[-1].set_title('h_T vs. c_max for {}'.format(CROSSING_GROUP_LABELS[CROSSING_GROUP_EXAMPLE_ID]))
 
     for ax in axs:
 
