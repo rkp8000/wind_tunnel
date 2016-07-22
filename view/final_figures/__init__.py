@@ -29,13 +29,11 @@ def trajectory_example_and_visualization_of_crossing_variability(
 
 
 def heading_concentration_dependence(
-        SEED,
         CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         T_BEFORE, T_AFTER,
         T_MODELS,
         CROSSING_GROUP_EXAMPLE_ID,
-        N_DATA_POINTS_MODEL,
         FIG_SIZE, CROSSING_GROUP_COLORS,
         SCATTER_SIZE, SCATTER_COLOR, SCATTER_ALPHA,
         FONT_SIZE):
@@ -186,7 +184,7 @@ def heading_concentration_dependence(
 
     axs[1].set_ylim(0, 0.2)
 
-    axs[1].set_ylabel('p-value')
+    axs[1].set_ylabel('p-value (dashed lines)')
 
     ## FIT BOTH MODELS TO EACH DATASET
 
@@ -255,6 +253,9 @@ def heading_concentration_dependence(
         data[CROSSING_GROUP_EXAMPLE_ID]['c_maxs'],
         data[CROSSING_GROUP_EXAMPLE_ID]['model_headings'],
         s=SCATTER_SIZE, c=SCATTER_COLOR, lw=0, alpha=SCATTER_ALPHA)
+
+    axs[-1].set_xlim(0, data[CROSSING_GROUP_EXAMPLE_ID]['c_maxs'].max())
+    axs[-1].set_ylim(0, 180)
 
     axs[-1].set_xlabel('c_max')
     axs[-1].set_ylabel('heading at {} s\n since odor peak'.format(T_MODELS[CROSSING_GROUP_EXAMPLE_ID]))
