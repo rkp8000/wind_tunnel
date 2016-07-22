@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 import matplotlib.pyplot as plt
 import numpy as np
+from pprint import pprint
 
 from db_api import models
 from db_api.connect import session
@@ -206,39 +207,46 @@ def heading_concentration_dependence(
 
         n = len(hs)
 
-        """
-        binary_model = simple_models.BinaryHeadingConcModel()
+        rho = stats.pearsonr_partial_with_confidence(c_maxs, hs, [x_0s, h_0s])[0]
+
+        binary_model = simple_models.ThresholdLinearHeadingConcModel(
+            include_c_max_coefficient=False)
 
         binary_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
 
         hs_predicted_binary = binary_model.predict(c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
 
-        rss_binary = np.sum((h_0s - hs_predicted_binary) ** 2)
+        rss_binary = np.sum((hs - hs_predicted_binary) ** 2)
 
-        binary_linear_model = simple_models.BinaryLinearHeadingConcModel()
+        threshold_linear_model = simple_models.ThresholdLinearHeadingConcModel(
+            include_c_max_coefficient=True)
 
-        binary_linear_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+        threshold_linear_model.brute_force_fit(hs=hs, c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
 
-        hs_predicted_binary_linear = binary_linear_model.predict(c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
+        hs_predicted_threshold_linear = threshold_linear_model.predict(
+            c_maxs=c_maxs, x_0s=x_0s, h_0s=h_0s)
 
-        rss_binary_linear = np.sum((h_0s - hs_predicted_binary_linear) ** 2)
+        rss_threshold_linear = np.sum((hs - hs_predicted_threshold_linear) ** 2)
 
         f, p_val = stats.f_test(
-            rss_reduced=rss_binary, rss_full=rss_binary_linear,
+            rss_reduced=rss_binary, rss_full=rss_threshold_linear,
             df_reduced=7, df_full=8, n=n
         )
 
         model_infos[cg_id] = {
             'n': n,
             'rss_binary': rss_binary,
-            'rss_binary_linear': rss_binary_linear,
+            'rss_binary_linear': rss_threshold_linear,
             'f': f,
             'p_val': p_val,
+            'threshold_binary': binary_model.threshold,
+            'threshold_binary_linear': threshold_linear_model.threshold,
+            'h_vs_c_coef': threshold_linear_model.linear_models['above'].coef_[0],
+            'rho': rho,
         }
 
-        print('Model fit analysis for "{}":'.format(cg_id))
-        print(model_infos[cg_id])
-    """
+        pprint('Model fit analysis for "{}":'.format(cg_id))
+        pprint(model_infos[cg_id])
 
     axs.append(fig.add_subplot(2, 1, 2))
 
