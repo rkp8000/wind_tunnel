@@ -11,13 +11,26 @@ def set_fontsize(ax, fontsize, legend_fontsize=None):
                 ax.get_xticklabels() + ax.get_yticklabels()):
         txt.set_fontsize(fontsize)
 
+    try:
+
+        for txt in [ax.zaxis.label] + ax.get_zticklabels():
+
+            txt.set_fontsize(fontsize)
+
+    except:
+
+        pass
+
     if legend_fontsize is None:
 
         legend_fontsize = fontsize
 
     legend = ax.get_legend()
+
     if legend:
+
         for txt in legend.get_texts():
+
             txt.set_fontsize(legend_fontsize)
 
 
