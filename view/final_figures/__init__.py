@@ -1,5 +1,7 @@
 from __future__ import division, print_function
+import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from pprint import pprint
 from scipy.stats import ks_2samp
@@ -14,19 +16,239 @@ import stats
 from experimental_constants import DT, PLUME_PARAMS_DICT
 
 
-def trajectory_example_and_visualization_of_crossing_variability(
+def example_traj_and_crossings(
         SEED,
         EXPT_ID,
-        TRAJ_NUMBER, VISUAL_THRESHOLD,
-        CROSSING_NUMBERS, T_BEFORE, T_AFTER,
-        FIG_SIZE, FONT_SIZE):
+        TRAJ_NUMBER,
+        TRAJ_START_TP, TRAJ_END_TP,
+        CROSSING_GROUP,
+        N_CROSSINGS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
+        MIN_PEAK_CONC,
+        TS_BEFORE_3D, TS_AFTER_3D,
+        TS_BEFORE_HEADING, TS_AFTER_HEADING,
+        FIG_SIZE,
+        SCATTER_SIZE,
+        CYL_STDS, CYL_COLOR, CYL_ALPHA,
+        EXPT_LABEL,
+        FONT_SIZE):
     """
     Show an example trajectory through a wind tunnel plume with the crossings marked.
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
     with its SEM as well as many individual examples.
     """
 
-    pass
+    if isinstance(TRAJ_NUMBER, int):
+
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPT_ID, odor_state='on', clean=True).all()
+
+        traj = list(trajs)[TRAJ_NUMBER]
+
+    else:
+
+        traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
+
+    # get plottable quantities
+
+    x_traj, y_traj, z_traj = traj.positions(session).T[:, TRAJ_START_TP:TRAJ_END_TP]
+    c_traj = traj.odors(session)[TRAJ_START_TP:TRAJ_END_TP]
+
+    # get several random crossings
+
+    crossings_all = session.query(models.Crossing).filter_by(
+        crossing_group_id=CROSSING_GROUP).filter(models.Crossing.max_odor > MIN_PEAK_CONC).all()
+    crossings_all = list(crossings_all)
+
+    np.random.seed(SEED)
+
+    plot_idxs = np.random.permutation(len(crossings_all))
+
+    crossing_examples = []
+
+    crossing_ctr = 0
+
+    headings = []
+
+    for idx in plot_idxs:
+
+        crossing = crossings_all[idx]
+
+        # throw away crossings that do not meet trigger criteria
+
+        x_0 = getattr(crossing.feature_set_basic, 'position_x_{}'.format('peak'))
+
+        if not (X_0_MIN <= x_0 <= X_0_MAX):
+
+            continue
+
+        h_0 = getattr(crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
+
+        if not (H_0_MIN <= h_0 <= H_0_MAX):
+
+            continue
+
+        # store example crossing if desired
+
+        if crossing_ctr < N_CROSSINGS:
+
+            crossing_dict = {}
+
+            for field in ['position_x', 'position_y', 'position_z', 'odor']:
+
+                crossing_dict[field] = crossing.timepoint_field(
+                    session, field, -TS_BEFORE_3D, TS_AFTER_3D, 'peak', 'peak')
+
+            crossing_dict['heading'] = crossing.timepoint_field(
+                session, 'heading_xyz', -TS_BEFORE_HEADING, TS_AFTER_HEADING - 1,
+                'peak', 'peak', nan_pad=True)
+
+            crossing_examples.append(crossing_dict)
+
+        # store crossing heading
+
+        temp = crossing.timepoint_field(
+            session, 'heading_xyz', -TS_BEFORE_HEADING, TS_AFTER_HEADING - 1,
+            'peak', 'peak', nan_pad=True)
+
+        headings.append(temp)
+
+        # increment crossing ctr
+
+        crossing_ctr += 1
+
+    headings = np.array(headings)
+
+
+    ## MAKE PLOTS
+
+    fig, axs = plt.figure(figsize=FIG_SIZE, tight_layout=True), []
+
+    #  plot example trajectory
+
+    axs.append(fig.add_subplot(3, 1, 1, projection='3d'))
+
+    # overlay plume cylinder
+
+    CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
+    CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
+
+    CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
+    CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
+
+    MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
+
+    y = np.linspace(-1, 1, 100, endpoint=True)
+    x = np.linspace(-0.3, 1, 5, endpoint=True)
+    yy, xx = np.meshgrid(y, x)
+    zz = np.sqrt(1 - yy ** 2)
+
+    yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
+    zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
+    zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
+    rstride = 20
+    cstride = 10
+
+    axs[0].plot_surface(
+        xx, yy, zz_top, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+
+    axs[0].plot_surface(
+        xx, yy, zz_bottom, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+
+    axs[0].scatter(
+        x_traj, y_traj, z_traj, c=c_traj, s=SCATTER_SIZE,
+        vmin=0, vmax=MAX_CONC/2, cmap=cmx.hot, lw=0, alpha=1)
+
+    axs[0].set_xlim(-0.3, 1)
+    axs[0].set_ylim(-0.15, 0.15)
+    axs[0].set_zlim(-0.15, 0.15)
+
+    axs[0].set_xticks([-0.3, 1.])
+    axs[0].set_yticks([-0.15, 0, 0.15])
+    axs[0].set_zticks([-0.15, 0, 0.15])
+
+    axs[0].set_xticklabels([-30, 100])
+    axs[0].set_yticklabels([-15, 0, 15])
+    axs[0].set_zticklabels([-15, 0, 15])
+
+    axs[0].set_xlabel('x (cm)')
+    axs[0].set_ylabel('y (cm)')
+    axs[0].set_zlabel('z (cm)')
+
+    # plot several crossings
+
+    axs.append(fig.add_subplot(3, 1, 2, projection='3d'))
+
+    # overlay plume cylinder
+
+    axs[1].plot_surface(
+        xx, yy, zz_top, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+
+    axs[1].plot_surface(
+        xx, yy, zz_bottom, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+
+    # plot crossings
+
+    for crossing in crossing_examples:
+
+        axs[1].scatter(
+            crossing['position_x'], crossing['position_y'], crossing['position_z'],
+            c=crossing['odor'], s=SCATTER_SIZE,
+            vmin=0, vmax=MAX_CONC / 2, cmap=cmx.hot, lw=0, alpha=1)
+
+    axs[1].set_xlim(-0.3, 1)
+    axs[1].set_ylim(-0.15, 0.15)
+    axs[1].set_zlim(-0.15, 0.15)
+
+    axs[1].set_xticks([-0.3, 1.])
+    axs[1].set_yticks([-0.15, 0.15])
+    axs[1].set_zticks([-0.15, 0.15])
+
+    axs[1].set_xticklabels([-30, 100])
+    axs[1].set_yticklabels([-15, 15])
+    axs[1].set_zticklabels([-15, 15])
+
+    axs[1].set_xlabel('x (cm)')
+    axs[1].set_ylabel('y (cm)')
+    axs[1].set_zlabel('z (cm)')
+
+    # plot headings
+
+    axs.append(fig.add_subplot(3, 2, 6))
+
+    t = np.arange(-TS_BEFORE_HEADING, TS_AFTER_HEADING) * DT
+
+    headings_mean = np.nanmean(headings, axis=0)
+    headings_std = np.nanstd(headings, axis=0)
+    headings_sem = stats.nansem(headings, axis=0)
+
+    # plot example crossings
+
+    for crossing in crossing_examples:
+
+        axs[2].plot(t, crossing['heading'], lw=1, color='k', alpha=0.5, zorder=-1)
+
+    # plot mean, sem, and std
+
+    axs[2].plot(t, headings_mean, lw=3, color='k', zorder=1)
+    axs[2].plot(t, headings_mean - headings_std, lw=3, ls='--', color='k', zorder=1)
+    axs[2].plot(t, headings_mean + headings_std, lw=3, ls='--', color='k', zorder=1)
+    axs[2].fill_between(
+        t, headings_mean - headings_sem, headings_mean + headings_sem,
+        color='k', alpha=0.2)
+
+    axs[2].set_xlabel('time since odor peak (s)')
+    axs[2].set_ylabel('heading (degrees)')
+
+    for ax in axs:
+
+        set_fontsize(ax, FONT_SIZE)
+
+    return fig
 
 
 def heading_concentration_dependence(
