@@ -11,7 +11,7 @@ from db_api.infotaxis import add_script_execution
 import time_series
 
 
-SIM_PREFIX = 'wind_tunnel_discretized_matched_r1000_d0.06'
+SIM_PREFIX = 'wind_tunnel_discretized_matched_r1000_d0.08'
 HEADING_SMOOTHING = 3
 THRESHOLD = 10
 
@@ -45,9 +45,10 @@ def main(trial_limit=None):
 
     for sim_id in SIM_IDS:
 
+        print('Identifying crossings from simulation: "{}"'.format(sim_id))
         # get simulation
 
-        sim = session.query(models.Simulation).filter_by(id=sim_id)
+        sim = session.query(models.Simulation).filter_by(id=sim_id).first()
 
         # get all trials from this simulation
 
@@ -64,7 +65,6 @@ def main(trial_limit=None):
             heading_smoothing=HEADING_SMOOTHING)
 
         session.add(cg)
-        session.commit()
 
         # loop through trials and identify crossings
 
@@ -72,7 +72,7 @@ def main(trial_limit=None):
 
         for trial in trials:
 
-            if trial_ctr >= trial_limit:
+            if trial_limit and trial_ctr >= trial_limit:
 
                 break
 
@@ -114,7 +114,7 @@ def main(trial_limit=None):
 
                 # create this crossing's basic feature set
 
-                crossing.basic_feature_set = models.CrossingFeatureSetBasic(
+                crossing.feature_set_basic = models.CrossingFeatureSetBasic(
                     position_x_entry=xs[crossing_list[1]],
                     position_y_entry=ys[crossing_list[1]],
                     position_z_entry=zs[crossing_list[1]],
@@ -123,10 +123,10 @@ def main(trial_limit=None):
                     position_y_peak=ys[crossing_list[2]],
                     position_z_peak=zs[crossing_list[2]],
                     heading_xyz_peak=hs[crossing_list[2]],
-                    position_x_exit=xs[crossing_list[3]],
-                    position_y_exit=ys[crossing_list[3]],
-                    position_z_exit=zs[crossing_list[3]],
-                    heading_xyz_exit=hs[crossing_list[3]],
+                    position_x_exit=xs[crossing_list[3] - 1],
+                    position_y_exit=ys[crossing_list[3] - 1],
+                    position_z_exit=zs[crossing_list[3] - 1],
+                    heading_xyz_exit=hs[crossing_list[3] - 1],
                 )
 
                 session.add(crossing)
