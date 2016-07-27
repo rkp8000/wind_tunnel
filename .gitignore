@@ -27,3 +27,5 @@ local_settings.py
 
 # IPython stuff
 .ipynb_checkpoints
+
+_exploratory.ipynb

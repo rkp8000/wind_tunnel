@@ -20,6 +20,7 @@ def main():
             filter_by(experiment=expt, determination=DETERMINATION).first()
 
         # loop over odor states
+
         for odor_state in ODOR_STATES:
             print('Odor "{}"'.format(odor_state))
 
