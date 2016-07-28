@@ -1,13 +1,18 @@
 from __future__ import division, print_function
+import imp
 import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from pprint import pprint
+from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp
 
 from db_api import models
 from db_api.connect import session
+
+from db_api.infotaxis import models as models_infotaxis
+from db_api.infotaxis.connect import session as session_infotaxis
 
 from axis_tools import set_fontsize
 import simple_models
@@ -687,20 +692,196 @@ def early_vs_late_heading_timecourse(
 
 
 def infotaxis_analysis(
-        WIND_SPEED_SIM_IDS,
-        HISTORY_DEPENDENCE_SIM_IDS,
+        WIND_TUNNEL_CG_IDS,
+        INFOTAXIS_WIND_SPEED_CG_IDS,
+        MAX_CROSSINGS,
+        INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
         HEAT_MAP_EXPT_IDS, HEAT_MAP_SIM_IDS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
+        X_0_MIN_SIM, X_0_MAX_SIM,
         T_BEFORE_EXPT, T_AFTER_EXPT,
-        T_BEFORE_SIM, T_AFTER_SIM,
+        TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
         FIG_SIZE, FONT_SIZE,
+        EXPT_LABELS,
         EXPT_COLORS, SIMULATION_COLORS):
     """
     Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
     dependence and history dependence.
     """
 
-    pass
+    ts_before_expt = int(round(T_BEFORE_EXPT / DT))
+    ts_after_expt = int(round(T_AFTER_EXPT / DT))
+
+    headings = {}
+
+    # get headings for wind tunnel plume crossings
+
+    headings['wind_tunnel'] = {}
+
+    for cg_id in WIND_TUNNEL_CG_IDS:
+
+        crossings_all = session.query(models.Crossing).filter_by(crossing_group_id=cg_id).all()
+
+        headings['wind_tunnel'][cg_id] = []
+
+        cr_ctr = 0
+
+        for crossing in crossings_all:
+
+            if cr_ctr >= MAX_CROSSINGS:
+
+                break
+
+            # skip this crossing if it doesn't meet our inclusion criteria
+
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN <= x_0 <= X_0_MAX):
+
+                continue
+
+            if not (H_0_MIN <= h_0 <= H_0_MAX):
+
+                continue
+
+            # store crossing heading
+
+            temp = crossing.timepoint_field(
+                session, 'heading_xyz', -ts_before_expt, ts_after_expt - 1,
+                'peak', 'peak', nan_pad=True)
+
+            # subtract initial heading
+
+            temp -= temp[ts_before_expt]
+
+            headings['wind_tunnel'][cg_id].append(temp)
+
+            cr_ctr += 1
+
+        headings['wind_tunnel'][cg_id] = np.array(headings['wind_tunnel'][cg_id])
+
+    # get headings from infotaxis plume crossings
+
+    headings['infotaxis'] = {}
+
+    for cg_id in INFOTAXIS_WIND_SPEED_CG_IDS:
+
+        crossings_all = list(session_infotaxis.query(models_infotaxis.Crossing).filter_by(
+            crossing_group_id=cg_id).all())
+
+        print('{} crossings for infotaxis crossing group: "{}"'.format(
+            len(crossings_all), cg_id))
+
+        headings['infotaxis'][cg_id] = []
+
+        cr_ctr = 0
+
+        for crossing in crossings_all:
+
+            if cr_ctr >= MAX_CROSSINGS:
+
+                break
+
+            # skip this crossing if it doesn't meet our inclusion criteria
+
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN_SIM <= x_0 <= X_0_MAX_SIM):
+
+                continue
+
+            if not (H_0_MIN <= h_0 <= H_0_MAX):
+
+                continue
+
+            # store crossing heading
+
+            temp = crossing.timepoint_field(
+                session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
+                'peak', 'peak', nan_pad=True)
+
+            temp[~np.isnan(temp)] = gaussian_filter1d(
+                temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
+
+            # subtract initial heading
+
+            temp -= temp[TS_BEFORE_SIM]
+
+            headings['infotaxis'][cg_id].append(temp)
+
+            cr_ctr += 1
+
+        headings['infotaxis'][cg_id] = np.array(headings['infotaxis'][cg_id])
+
+    # get history dependence
+
+    ## MAKE PLOTS
+
+    fig, axs = plt.figure(figsize=FIG_SIZE, tight_layout=True), []
+
+    axs.append(fig.add_subplot(4, 3, 1))
+    axs.append(fig.add_subplot(4, 3, 2, sharey=axs[0]))
+
+    # plot wind-speed dependence of wind tunnel trajectories
+
+    t = np.arange(-ts_before_expt, ts_after_expt) * DT
+
+    handles = []
+
+    for cg_id in WIND_TUNNEL_CG_IDS:
+
+        label = EXPT_LABELS[cg_id]
+        color = EXPT_COLORS[cg_id]
+
+        headings_mean = np.nanmean(headings['wind_tunnel'][cg_id], axis=0)
+        headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
+
+        # plot mean, sem, and std
+
+        handles.append(
+            axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
+        axs[0].fill_between(
+            t, headings_mean - headings_sem, headings_mean + headings_sem,
+            color=color, alpha=0.2)
+
+    axs[0].set_xlabel('time since odor peak (s)')
+    axs[0].set_ylabel('$\Delta$ heading (degrees)')
+    axs[0].set_title('experimental data\n(wind speed comparison)')
+
+    axs[0].legend(handles=handles, loc='best')
+
+    t = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM)
+
+    for cg_id, wt_cg_id in zip(INFOTAXIS_WIND_SPEED_CG_IDS, WIND_TUNNEL_CG_IDS):
+
+        label = EXPT_LABELS[wt_cg_id]
+        color = EXPT_COLORS[wt_cg_id]
+
+        headings_mean = np.nanmean(headings['infotaxis'][cg_id], axis=0)
+        headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
+
+        # plot mean, sem, and std
+
+        axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
+        axs[1].fill_between(
+            t, headings_mean - headings_sem, headings_mean + headings_sem,
+            color=color, alpha=0.2)
+
+    axs[1].set_xlabel('time steps since odor peak (s)')
+    axs[1].set_ylabel('$\Delta$ heading (degrees)')
+    axs[1].set_title('infotaxis simulations\n(wind speed comparison)')
+
+    # add axes for infotaxis history dependence
+
+    [axs.append(fig.add_subplot(4, 3, 3 + ctr)) for ctr in range(4)]
+
+    for ax in axs:
+
+        set_fontsize(ax, FONT_SIZE)
+
+    return fig
 
 
 def classifier(
