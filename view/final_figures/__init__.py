@@ -696,14 +696,17 @@ def infotaxis_analysis(
         INFOTAXIS_WIND_SPEED_CG_IDS,
         MAX_CROSSINGS,
         INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
+        MAX_CROSSINGS_EARLY,
         HEAT_MAP_EXPT_IDS, HEAT_MAP_SIM_IDS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         X_0_MIN_SIM, X_0_MAX_SIM,
+        X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
         T_BEFORE_EXPT, T_AFTER_EXPT,
         TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
         FIG_SIZE, FONT_SIZE,
         EXPT_LABELS,
-        EXPT_COLORS, SIMULATION_COLORS):
+        EXPT_COLORS,
+        SIM_LABELS):
     """
     Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
     dependence and history dependence.
@@ -805,7 +808,7 @@ def infotaxis_analysis(
             temp[~np.isnan(temp)] = gaussian_filter1d(
                 temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
 
-            # subtract initial heading
+            # subtract initial heading and store result
 
             temp -= temp[TS_BEFORE_SIM]
 
@@ -815,7 +818,73 @@ def infotaxis_analysis(
 
         headings['infotaxis'][cg_id] = np.array(headings['infotaxis'][cg_id])
 
-    # get history dependence
+    # get history dependences for infotaxis simulations
+
+    headings['it_hist_dependence'] = {}
+
+    for cg_id in INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS:
+
+        crossings_all = list(session_infotaxis.query(models_infotaxis.Crossing).filter_by(
+            crossing_group_id=cg_id).all())
+
+        headings['it_hist_dependence'][cg_id] = {'early': [], 'late': []}
+
+        cr_ctr = 0
+
+        for crossing in crossings_all:
+
+            if cr_ctr >= MAX_CROSSINGS:
+
+                break
+
+            # skip this crossing if it doesn't meet our inclusion criteria
+
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN_SIM_HISTORY <= x_0 <= X_0_MAX_SIM_HISTORY):
+
+                continue
+
+            if not (H_0_MIN <= h_0 <= H_0_MAX):
+
+                continue
+
+            # store crossing heading
+
+            temp = crossing.timepoint_field(
+                session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
+                'peak', 'peak', nan_pad=True)
+
+            temp[~np.isnan(temp)] = gaussian_filter1d(
+                temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
+
+            # subtract initial heading
+
+            temp -= temp[TS_BEFORE_SIM]
+
+            # store according to its crossing number
+
+            if crossing.crossing_number <= MAX_CROSSINGS_EARLY:
+
+                headings['it_hist_dependence'][cg_id]['early'].append(temp)
+
+            elif crossing.crossing_number > MAX_CROSSINGS_EARLY:
+
+                headings['it_hist_dependence'][cg_id]['late'].append(temp)
+
+            else:
+
+                raise Exception('crossing number is not early or late for crossing {}'.format(
+                    crossing.id))
+
+            cr_ctr += 1
+
+    headings['it_hist_dependence'][cg_id]['early'] = np.array(
+        headings['it_hist_dependence'][cg_id]['early'])
+
+    headings['it_hist_dependence'][cg_id]['late'] = np.array(
+        headings['it_hist_dependence'][cg_id]['late'])
 
     ## MAKE PLOTS
 
@@ -838,7 +907,7 @@ def infotaxis_analysis(
         headings_mean = np.nanmean(headings['wind_tunnel'][cg_id], axis=0)
         headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
 
-        # plot mean, sem, and std
+        # plot mean and sem
 
         handles.append(
             axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
@@ -862,7 +931,7 @@ def infotaxis_analysis(
         headings_mean = np.nanmean(headings['infotaxis'][cg_id], axis=0)
         headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
 
-        # plot mean, sem, and std
+        # plot mean and sem
 
         axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
         axs[1].fill_between(
@@ -870,12 +939,56 @@ def infotaxis_analysis(
             color=color, alpha=0.2)
 
     axs[1].set_xlabel('time steps since odor peak (s)')
-    axs[1].set_ylabel('$\Delta$ heading (degrees)')
     axs[1].set_title('infotaxis simulations\n(wind speed comparison)')
 
-    # add axes for infotaxis history dependence
+    # add axes for infotaxis history dependence and make plots
 
     [axs.append(fig.add_subplot(4, 3, 3 + ctr)) for ctr in range(4)]
+
+    for (ax, cg_id) in zip(axs[-4:], INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS):
+
+        mean_early = np.nanmean(headings['it_hist_dependence'][cg_id]['early'], axis=0)
+        sem_early = stats.nansem(headings['it_hist_dependence'][cg_id]['early'], axis=0)
+
+        mean_late = np.nanmean(headings['it_hist_dependence'][cg_id]['late'], axis=0)
+        sem_late = stats.nansem(headings['it_hist_dependence'][cg_id]['late'], axis=0)
+
+        # plot means and stds
+
+        try:
+
+            handle_early = ax.plot(t, mean_early, lw=3, color='b', zorder=0, label='early')[0]
+            ax.fill_between(
+                t, mean_early - sem_early, mean_early + sem_early,
+                color='b', alpha=0.2)
+
+        except:
+
+            pass
+
+        try:
+
+            handle_late = ax.plot(t, mean_late, lw=3, color='g', zorder=0, label='late')[0]
+            ax.fill_between(
+                t, mean_late - sem_late, mean_late + sem_late,
+                color='g', alpha=0.2)
+
+        except:
+
+            pass
+
+        ax.set_xlabel('time steps since odor peak (s)')
+        ax.set_title(SIM_LABELS[cg_id])
+
+        try:
+
+            ax.legend(handles=[handle_early, handle_late])
+
+        except:
+
+            pass
+
+    axs[3].set_ylabel('$\Delta$ heading (degrees)')
 
     for ax in axs:
 
