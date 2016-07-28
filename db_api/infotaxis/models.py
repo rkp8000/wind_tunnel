@@ -71,6 +71,23 @@ class Simulation(Base):
         self.nz = env.nz
 
 
+class Timepoint(Base):
+    __tablename__ = 'timepoint'
+
+    id = Column(BigInteger, primary_key=True)
+
+    xidx = Column(Integer)
+    yidx = Column(Integer)
+    zidx = Column(Integer)
+
+    hxyz = Column(Float)
+
+    odor = Column(Float)
+    detected_odor = Column(Float)
+
+    src_entropy = Column(Float)
+
+
 class OngoingRun(Base):
     __tablename__ = 'ongoing_run'
 
@@ -306,23 +323,6 @@ class PlumeParam(Base):
     value = Column(Float)
 
     plume_id = Column(Integer, ForeignKey('plume.id'))
-
-
-class Timepoint(Base):
-    __tablename__ = 'timepoint'
-
-    id = Column(BigInteger, primary_key=True)
-
-    xidx = Column(Integer)
-    yidx = Column(Integer)
-    zidx = Column(Integer)
-
-    hxyz = Column(Float)
-
-    odor = Column(Float)
-    detected_odor = Column(Float)
-
-    src_entropy = Column(Float)
 
 
 class Script(Base):
