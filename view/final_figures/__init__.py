@@ -697,12 +697,14 @@ def infotaxis_analysis(
         MAX_CROSSINGS,
         INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
         MAX_CROSSINGS_EARLY,
-        HEAT_MAP_EXPT_IDS, HEAT_MAP_SIM_IDS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         X_0_MIN_SIM, X_0_MAX_SIM,
         X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
         T_BEFORE_EXPT, T_AFTER_EXPT,
         TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
+        HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID,
+        N_HEAT_MAP_TRAJS,
+        X_BINS, Y_BINS,
         FIG_SIZE, FONT_SIZE,
         EXPT_LABELS,
         EXPT_COLORS,
@@ -886,6 +888,44 @@ def infotaxis_analysis(
     headings['it_hist_dependence'][cg_id]['late'] = np.array(
         headings['it_hist_dependence'][cg_id]['late'])
 
+    # get heatmaps
+
+    if N_HEAT_MAP_TRAJS:
+
+        trajs_expt = session.query(models.Trajectory).\
+            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on').limit(N_HEAT_MAP_TRAJS)
+        trials_sim = session_infotaxis.query(models_infotaxis.Trial).\
+            filter_by(simulation_id=HEAT_MAP_SIM_ID).limit(N_HEAT_MAP_TRAJS)
+
+    else:
+
+        trajs_expt = session.query(models.Trajectory).\
+            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on')
+        trials_sim = session_infotaxis.query(models_infotaxis.Trial).\
+            filter_by(simulation_id=HEAT_MAP_SIM_ID)
+
+    expt_xs = []
+    expt_ys = []
+
+    sim_xs = []
+    sim_ys = []
+
+    for traj in trajs_expt:
+
+        expt_xs.append(traj.timepoint_field(session, 'position_x'))
+        expt_ys.append(traj.timepoint_field(session, 'position_y'))
+
+    for trial in trials_sim:
+
+        sim_xs.append(trial.timepoint_field(session_infotaxis, 'xidx'))
+        sim_ys.append(trial.timepoint_field(session_infotaxis, 'yidx'))
+
+    expt_xs = np.concatenate(expt_xs)
+    expt_ys = np.concatenate(expt_ys)
+
+    sim_xs = np.concatenate(sim_xs) * 0.02 - 0.3
+    sim_ys = np.concatenate(sim_ys) * 0.02 - 0.15
+
     ## MAKE PLOTS
 
     fig, axs = plt.figure(figsize=FIG_SIZE, tight_layout=True), []
@@ -989,6 +1029,21 @@ def infotaxis_analysis(
             pass
 
     axs[3].set_ylabel('$\Delta$ heading (degrees)')
+
+    # plot heat maps
+
+    axs.append(fig.add_subplot(4, 1, 3))
+    axs.append(fig.add_subplot(4, 1, 4))
+
+    axs[6].hist2d(expt_xs, expt_ys, bins=(X_BINS, Y_BINS))
+    axs[7].hist2d(sim_xs, sim_ys, bins=(X_BINS, Y_BINS))
+
+    axs[6].set_ylabel('y (m)')
+    axs[7].set_ylabel('y (m)')
+    axs[7].set_xlabel('x (m)')
+
+    axs[6].set_title('experimental data (fly 0.4 m/s)')
+    axs[7].set_title('infotaxis simulation')
 
     for ax in axs:
 
