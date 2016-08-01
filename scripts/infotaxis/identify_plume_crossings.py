@@ -11,14 +11,14 @@ from db_api.infotaxis import add_script_execution
 import time_series
 
 
-SIM_PREFIX = 'wind_tunnel_discretized_matched_r1000_d0.08'
+SIM_PREFIX = 'wind_tunnel_discretized_matched_r1000_d0.06'
 HEADING_SMOOTHING = 3
-THRESHOLD = 10
+THRESHOLDS = {'fly': 10, 'mosq': 430}
 
 SCRIPTID = 'identify_plume_crossings'
 SCRIPTNOTES = ('Identify plume crossings for simulations with prefix "{}" '
-    'using heading smoothing "{}" and threshold "{}"'.format(
-    SIM_PREFIX, HEADING_SMOOTHING, THRESHOLD))
+    'using heading smoothing "{}" and thresholds "{}"'.format(
+    SIM_PREFIX, HEADING_SMOOTHING, THRESHOLDS))
 
 SIM_SUFFIXES = [
     'fruitfly_0.3mps_checkerboard_floor_odor_on',
@@ -46,6 +46,7 @@ def main(trial_limit=None):
     for sim_id in SIM_IDS:
 
         print('Identifying crossings from simulation: "{}"'.format(sim_id))
+
         # get simulation
 
         sim = session.query(models.Simulation).filter_by(id=sim_id).first()
@@ -56,12 +57,20 @@ def main(trial_limit=None):
 
         # make crossing group
 
-        cg_id = '{}_th_{}_hsmoothing_{}'.format(sim_id, THRESHOLD, HEADING_SMOOTHING)
+        if 'fly' in sim_id:
+
+            threshold = THRESHOLDS['fly']
+
+        elif 'mosq' in sim_id:
+
+            threshold = THRESHOLDS['mosq']
+
+        cg_id = '{}_th_{}_hsmoothing_{}'.format(sim_id, threshold, HEADING_SMOOTHING)
 
         cg = models.CrossingGroup(
             id=cg_id,
             simulation=sim,
-            threshold=THRESHOLD,
+            threshold=threshold,
             heading_smoothing=HEADING_SMOOTHING)
 
         session.add(cg)
@@ -91,7 +100,7 @@ def main(trial_limit=None):
             # identify crossings
 
             crossing_lists, peaks = time_series.segment_by_threshold(
-                odors, THRESHOLD)
+                odors, threshold)
 
             tr_start = trial.start_timepoint_id
 
