@@ -1075,22 +1075,18 @@ def classify_trajectories(
 
     for e_ctr, expt_id in enumerate(EXPT_IDS):
 
-        # get trajectories
+        print('Experiment: {}'.format(expt_id))
+
+        # get all trajectories that meet criteria
 
         trajs = {'on': [], 'none': []}
 
         for odor_state in trajs.keys():
 
-            t_ctr = 0
-
             traj_array = list(session.query(models.Trajectory).filter_by(
                 experiment_id=expt_id, odor_state=odor_state, clean=True).all())
 
-            for traj in np.random.permutation(traj_array):
-
-                if t_ctr >= N_TRAJS_PER_CLASS[expt_id]:
-
-                    break
+            for traj in traj_array:  #np.random.permutation(traj_array):
 
                 odors = traj.odors(session)
 
@@ -1118,21 +1114,15 @@ def classify_trajectories(
 
                 trajs[odor_state].append(traj)
 
-                t_ctr += 1
-
-        # make class sets equal sizes
+        # get number of pairs of trajectories from different classes
 
         n_traj_pairs[expt_id] = min(len(trajs['on']), len(trajs['none']))
-
-        trajs['on'] = trajs['on'][:n_traj_pairs[expt_id]]
-        trajs['none'] = trajs['none'][:n_traj_pairs[expt_id]]
 
         n_train = int(round(PROPORTION_TRAIN * n_traj_pairs[expt_id]))
         n_test = n_traj_pairs[expt_id] - n_train
 
         print('{} training trajs per class for expt: {}'.format(n_train, expt_id))
         print('{} test trajs per class for expt: {}'.format(n_test, expt_id))
-
 
         # loop through trials
 
@@ -1141,8 +1131,14 @@ def classify_trajectories(
 
         for tr_ctr in range(N_TRIALS):
 
+            if (tr_ctr + 1) % 10 == 0:
+
+                print('Trial {}'.format(tr_ctr + 1))
+
+            # shuffled trajectory list and get subset for classifier testing
+
             trajs_shuffled = {
-                odor_state: np.random.permutation(traj_set)
+                odor_state: np.random.permutation(traj_set)[:n_traj_pairs[expt_id]]
                 for odor_state, traj_set in trajs.items()
             }
 
@@ -1218,6 +1214,10 @@ def classify_trajectories(
 
     for classifier, ax_row in zip(CLASSIFIERS, axs):
 
+        if len(EXPT_IDS) == 1:
+
+            ax_row = [ax_row]
+
         for expt_id, ax in zip(EXPT_IDS, ax_row):
 
             ax.hist(
@@ -1233,7 +1233,8 @@ def classify_trajectories(
 
             if expt_id == EXPT_IDS[0]:
 
-                ax.set_ylabel('number of trials')
+                ax.set_ylabel('number of trials\n({} classifier)'.format(
+                    classifier[0]).replace('_', ' '))
 
                 if classifier == CLASSIFIERS[0]:
 
