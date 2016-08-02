@@ -1,5 +1,5 @@
 from __future__ import division, print_function
-import imp
+from copy import deepcopy
 import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -11,12 +11,10 @@ from scipy.stats import ks_2samp
 from db_api import models
 from db_api.connect import session
 
-from db_api.infotaxis import models as models_infotaxis
-from db_api.infotaxis.connect import session as session_infotaxis
-
 from axis_tools import set_fontsize
 import simple_models
 import stats
+import time_series_classifier as tsc
 
 from experimental_constants import DT, PLUME_PARAMS_DICT
 
@@ -714,6 +712,9 @@ def infotaxis_analysis(
     dependence and history dependence.
     """
 
+    from db_api.infotaxis import models as models_infotaxis
+    from db_api.infotaxis.connect import session as session_infotaxis
+
     ts_before_expt = int(round(T_BEFORE_EXPT / DT))
     ts_after_expt = int(round(T_AFTER_EXPT / DT))
 
@@ -1052,16 +1053,198 @@ def infotaxis_analysis(
     return fig
 
 
-def classifier(
+def classify_trajectories(
         SEED,
         EXPT_IDS,
-        CLASSIFIER_TYPES,
-        N_TRAINING, N_TEST, N_TRIALS,
-        INTEGRATED_ODOR_THRESHOLDS,
-        AX_SIZE, AX_GRID, FONT_SIZE):
+        CLASSIFIERS,
+        MIN_INTEGRATED_ODORS, MIN_MAX_ODORS,
+        N_TRAJS_PER_CLASS, PROPORTION_TRAIN, N_TRIALS,
+        BINS, AX_SIZE, EXPT_LABELS, FONT_SIZE):
     """
     Show classification accuracy when classifying whether insect is engaged in odor-tracking
     or not.
     """
 
-    pass
+    np.random.seed(SEED)
+
+    # loop through experiments
+
+    n_traj_pairs = {}
+    train_accuracies = {}
+    test_accuracies = {}
+
+    for e_ctr, expt_id in enumerate(EXPT_IDS):
+
+        # get trajectories
+
+        trajs = {'on': [], 'none': []}
+
+        for odor_state in trajs.keys():
+
+            t_ctr = 0
+
+            traj_array = list(session.query(models.Trajectory).filter_by(
+                experiment_id=expt_id, odor_state=odor_state, clean=True).all())
+
+            for traj in np.random.permutation(traj_array):
+
+                if t_ctr >= N_TRAJS_PER_CLASS[expt_id]:
+
+                    break
+
+                odors = traj.odors(session)
+
+                if 'mosquito' in expt_id:
+
+                    odors -= 400
+
+                integrated_odor = odors.sum() * 0.01
+
+                max_odor = odors.max()
+
+                # make sure they meet our criteria
+
+                if MIN_INTEGRATED_ODORS is not None:
+
+                    if integrated_odor < MIN_INTEGRATED_ODORS[expt_id]:
+
+                        continue
+
+                if MIN_MAX_ODORS is not None:
+
+                    if max_odor < MIN_MAX_ODORS[expt_id]:
+
+                        continue
+
+                trajs[odor_state].append(traj)
+
+                t_ctr += 1
+
+        # make class sets equal sizes
+
+        n_traj_pairs[expt_id] = min(len(trajs['on']), len(trajs['none']))
+
+        trajs['on'] = trajs['on'][:n_traj_pairs[expt_id]]
+        trajs['none'] = trajs['none'][:n_traj_pairs[expt_id]]
+
+        n_train = int(round(PROPORTION_TRAIN * n_traj_pairs[expt_id]))
+        n_test = n_traj_pairs[expt_id] - n_train
+
+        print('{} training trajs per class for expt: {}'.format(n_train, expt_id))
+        print('{} test trajs per class for expt: {}'.format(n_test, expt_id))
+
+
+        # loop through trials
+
+        train_accuracies[expt_id] = {classifier[0]: [] for classifier in CLASSIFIERS}
+        test_accuracies[expt_id] = {classifier[0]: [] for classifier in CLASSIFIERS}
+
+        for tr_ctr in range(N_TRIALS):
+
+            trajs_shuffled = {
+                odor_state: np.random.permutation(traj_set)
+                for odor_state, traj_set in trajs.items()
+            }
+
+            # get training and test velocity time-series
+
+            vels_train = {
+                odor_state: [traj.velocities(session) for traj in traj_set[:n_train]]
+                for odor_state, traj_set in trajs_shuffled.items()
+            }
+
+            vels_test = {
+                odor_state: [traj.velocities(session) for traj in traj_set[n_train:]]
+                for odor_state, traj_set in trajs_shuffled.items()
+            }
+
+            for classifier in CLASSIFIERS:
+
+                # instantiate classifier
+
+                if classifier[0] == 'var':
+
+                    clf = tsc.VarClassifierBinary(dim=3, order=classifier[1])
+
+                elif classifier[0] == 'mean_speed':
+
+                    clf = tsc.MeanSpeedClassifierBinary()
+
+                elif classifier[0] == 'mean_heading':
+
+                    clf = tsc.MeanHeadingClassifierBinary()
+
+                elif classifier[0] == 'std_heading':
+
+                    clf = tsc.StdHeadingClassifierBinary()
+
+                # train classifier
+
+                clf.train(positives=vels_train['on'], negatives=vels_train['none'])
+
+                # make predictions on training set
+
+                train_predictions = np.array(clf.predict(vels_train['on'] + vels_train['none']))
+                train_correct = np.concatenate([[1] * n_train + [-1] * n_train])
+
+                train_accuracy = 100 * np.mean(train_predictions == train_correct)
+
+                # make predictions on test set
+
+                # shuffle test trajectories for good luck
+
+                rand_idxs = np.random.permutation(2 * len(vels_test['on']))
+
+                vels_test_shuffled = np.array(vels_test['on'] + vels_test['none'])[rand_idxs]
+                test_correct = np.concatenate([[1] * n_test + [-1] * n_test])[rand_idxs]
+
+                test_predictions = np.array(
+                    clf.predict(vels_test_shuffled))
+
+                test_accuracy = 100 * np.mean(test_predictions == test_correct)
+
+                # store results
+
+                train_accuracies[expt_id][classifier[0]].append(train_accuracy)
+                test_accuracies[expt_id][classifier[0]].append(test_accuracy)
+
+
+    ## MAKE PLOTS
+
+    fig_size = (len(EXPT_IDS) * AX_SIZE[0], len(CLASSIFIERS) * AX_SIZE[1])
+
+    fig, axs = plt.subplots(len(CLASSIFIERS), len(EXPT_IDS), figsize=fig_size,
+        sharex=True, sharey=True, tight_layout=True)
+
+    for classifier, ax_row in zip(CLASSIFIERS, axs):
+
+        for expt_id, ax in zip(EXPT_IDS, ax_row):
+
+            ax.hist(
+                [
+                    train_accuracies[expt_id][classifier[0]],
+                    test_accuracies[expt_id][classifier[0]]
+                ],
+                bins=BINS, lw=0, color=['r', 'k'])
+
+            if classifier == CLASSIFIERS[0]:
+
+                ax.set_title(EXPT_LABELS[expt_id])
+
+            if expt_id == EXPT_IDS[0]:
+
+                ax.set_ylabel('number of trials')
+
+                if classifier == CLASSIFIERS[0]:
+
+                    ax.legend(['training', 'test'])
+
+        if classifier == CLASSIFIERS[-1]:
+
+            ax.set_xlabel('classification\naccuracy')
+
+    for ax in axs.flat:
+
+        set_fontsize(ax, FONT_SIZE)
+
+    return fig
