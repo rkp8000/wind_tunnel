@@ -99,7 +99,9 @@ class CenterlineInferringAgent(object):
 
         # get upwind component
 
-        uw = -self.hit_influence / np.sqrt(np.trace(k))
+        factor = (1. / np.sqrt(np.trace(k))) - (1. / np.sqrt(np.trace(self.k_0)))
+
+        uw = -self.hit_influence * factor
 
         bias = np.array([uw, cw[0], cw[1]])
         bias *= (self.bias / np.linalg.norm(bias))
@@ -129,6 +131,7 @@ class CenterlineInferringAgent(object):
         odors = np.nan * np.zeros((n_steps,))
         hits = np.nan * np.zeros((n_steps,))
 
+        last_odor = 0
         in_puff = False
         hit_occurred = False
 
