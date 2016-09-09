@@ -264,7 +264,7 @@ def crossing_triggered_headings_early_late(
 
         ax.set_ylabel('heading (deg)')
 
-    ax.legend(handles=handles)
+    ax.legend(handles=handles, fontsize=16)
 
     set_font_size(ax, 16)
 
