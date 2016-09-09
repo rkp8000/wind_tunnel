@@ -45,12 +45,13 @@ class CenterlineInferringAgent(object):
     noise with identity covariance, and b is the bias term.
     """
 
-    def __init__(self, tau, noise, bias, threshold, hit_influence, k_0, k_s):
+    def __init__(self, tau, noise, bias, threshold, hit_trigger, hit_influence, k_0, k_s):
 
         self.tau = tau
         self.noise = noise
         self.bias = bias
         self.threshold = threshold
+        self.hit_trigger = hit_trigger
         self.hit_influence = hit_influence
         self.k_0 = k_0
         self.k_s = k_s
@@ -129,6 +130,7 @@ class CenterlineInferringAgent(object):
         hits = np.nan * np.zeros((n_steps,))
 
         in_puff = False
+        hit_occurred = False
 
         for t_ctr in range(n_steps):
 
@@ -161,18 +163,35 @@ class CenterlineInferringAgent(object):
 
             # has hit occurred?
 
-            if odor >= self.threshold and not in_puff:
+            if self.hit_trigger == 'entry':
 
-                hit = 1
-                in_puff = True
+                if odor >= self.threshold and not in_puff:
 
-            else:
+                    hit = 1
+                    in_puff = True
+
+                else:
+
+                    hit = 0
+
+            elif self.hit_trigger == 'peak':
 
                 hit = 0
 
+                if odor >= self.threshold:
+
+                    if odor <= last_odor and not hit_occurred:
+
+                        hit = 1
+                        hit_occurred = True
+
+                    last_odor = odor
+
             if odor < self.threshold:
 
+                last_odor = 0
                 in_puff = False
+                hit_occurred = False
 
             # store data for this time step
 
