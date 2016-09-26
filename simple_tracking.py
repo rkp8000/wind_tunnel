@@ -45,7 +45,10 @@ class CenterlineInferringAgent(object):
     noise with identity covariance, and b is the bias term.
     """
 
-    def __init__(self, tau, noise, bias, threshold, hit_trigger, hit_influence, k_0, k_s):
+    def __init__(
+            self, tau, noise, bias, threshold,
+            hit_trigger, hit_influence, k_0, k_s,
+            tau_memory, bounds):
 
         self.tau = tau
         self.noise = noise
@@ -55,32 +58,48 @@ class CenterlineInferringAgent(object):
         self.hit_influence = hit_influence
         self.k_0 = k_0
         self.k_s = k_s
+        self.tau_memory = tau_memory
 
         self.k_0_inv = np.linalg.inv(k_0)
         self.k_s_inv = np.linalg.inv(k_s)
 
-    def get_centerline_posterior(self, hit_xs):
+        self.bounds = bounds
+
+    def update_centerline_posterior(self, centerline_mu, centerline_k, hit_x):
         """
         Get the new mean and covariance of the posterior
-        :param hit_xs: array of positions where hits have occurred
+        :param centerline_mu: previous mean
+        :param centerline_k: previous covariance
+        :param hit_x: position where hit occurred
         :return: mean and covariance of centerline posterior distribution
         """
 
-        # how many hits?
-
-        n_hits = len(hit_xs)
-
         # covariance first
 
-        k_inv = self.k_0_inv + n_hits * self.k_s_inv
+        k_inv_prev = np.linalg.inv(centerline_k)
+        k_inv = k_inv_prev + self.k_s_inv
         k = np.linalg.inv(k_inv)
 
         # mean
 
-        temp = self.k_s_inv.dot(hit_xs[:, 1:].T).sum(axis=1)
+        temp = self.k_s_inv.dot(hit_x[1:]) + k_inv_prev.dot(centerline_mu)
         mu = k.dot(temp)
 
         return mu, k
+
+    def decay_centerline_posterior(self, centerline_mu, centerline_k, dt):
+        """
+        Decay the centerline posterior using the memory time constant self.tau_memory.
+        :param centerline_mu: previous mean
+        :param centerline_k: previous covariance
+        :param dt: simulation time step
+        :return: decayed mu and k
+        """
+
+        d_centerline_mu = (dt / self.tau_memory) * (-centerline_mu)
+        d_centerline_k = (dt / self.tau_memory) * (-centerline_k + self.k_0)
+
+        return centerline_mu + d_centerline_mu, centerline_k + d_centerline_k
 
     def bias_from_centerline_distr(self, x, mu, k):
         """
@@ -107,6 +126,38 @@ class CenterlineInferringAgent(object):
         bias *= (self.bias / np.linalg.norm(bias))
 
         return bias
+
+    def reflect_if_out_of_bounds(self, v, x):
+        """
+        Check if a position is within the bounds
+        :param v: current velocity
+        :param x: current position
+        :param x_prev: previous (in bounds position)
+        :return: v, x corrected if x was out of bounds
+        """
+
+        if self.bounds is None:
+
+            return v, x
+
+        else:
+
+            v_new = v.copy()
+            x_new = x.copy()
+
+            for dim in range(3):
+
+                if x[dim] < self.bounds[dim][0]:
+
+                    v_new[dim] *= -1
+                    x_new[dim] = 2 * self.bounds[dim][0] - x[dim]
+
+                elif x[dim] > self.bounds[dim][1]:
+
+                    v_new[dim] *= -1
+                    x_new[dim] = 2 * self.bounds[dim][1] - x[dim]
+
+            return v_new, x_new
 
     def track(self, plume, start_pos, duration, dt):
         """
@@ -159,6 +210,8 @@ class CenterlineInferringAgent(object):
 
                 v += (dt / self.tau) * (-v + eta + b)
                 x += v * dt
+
+            v, x = self.reflect_if_out_of_bounds(v, x)
 
             # sample odor
 
@@ -213,10 +266,18 @@ class CenterlineInferringAgent(object):
 
             if hit:
 
-                hit_xs = xs[hits == 1, :]
+                # sharpen posterior if hit occurred
 
                 centerline_mu, centerline_k = \
-                    self.get_centerline_posterior(hit_xs)
+                    self.update_centerline_posterior(centerline_mu, centerline_k, x)
+
+            else:
+
+                # otherwise let posterior decay back towards prior
+
+                centerline_mu, centerline_k = \
+                    self.decay_centerline_posterior(centerline_mu, centerline_k, dt)
+
 
         return_dict = {
             'centerline_mus': centerline_mus,
