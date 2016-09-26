@@ -132,7 +132,6 @@ class CenterlineInferringAgent(object):
         Check if a position is within the bounds
         :param v: current velocity
         :param x: current position
-        :param x_prev: previous (in bounds position)
         :return: v, x corrected if x was out of bounds
         """
 
