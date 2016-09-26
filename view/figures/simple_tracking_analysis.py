@@ -2,12 +2,282 @@ from __future__ import division, print_function
 from itertools import product as cproduct
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from scipy import optimize, stats
 
-from kinematics import heading
+from db_api import models
+from db_api.connect import session
+
+from kinematics import heading, angular_velocity
 from plot import set_font_size
 from simple_tracking import GaussianLaminarPlume, CenterlineInferringAgent
 from stats import nansem
 from time_series import segment_by_threshold
+
+
+def example_trajectory_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
+    """
+    Create an example trajectory and plot some of the resulting covariates.
+    """
+
+    # build plume and agent
+
+    pl = GaussianLaminarPlume(0, np.array([0., 0]), np.eye(2))
+    ag = CenterlineInferringAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=np.inf,
+        hit_trigger='peak', hit_influence=0,
+        k_0=np.eye(2), k_s=np.eye(2), tau_memory=1, bounds=BOUNDS)
+
+    # generate the trajectory
+
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    # plot trajectory
+
+    fig = plt.figure(figsize=(15, 10), tight_layout=True)
+    axs = []
+
+    axs.append(fig.add_subplot(2, 1, 1))
+
+    axs[0].plot(traj['xs'][:, 0], traj['xs'][:, 1], lw=2, color='k', zorder=0)
+    axs[0].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[0].set_xlim(*BOUNDS[0])
+    axs[0].set_ylim(*BOUNDS[1])
+
+    axs[0].set_xlabel('x (m)')
+    axs[0].set_ylabel('y (m)')
+
+    axs[0].set_title('example trajectory')
+
+    # plot some histograms
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+
+    axs.append(fig.add_subplot(2, 2, 3))
+    axs.append(fig.add_subplot(2, 2, 4))
+
+    axs[1].hist(speeds, bins=30, lw=0, normed=True)
+    axs[2].hist(ws, bins=30, lw=0, normed=True)
+
+    axs[1].set_xlabel('speed (m/s)')
+    axs[2].set_xlabel('ang. vel (rad/s)')
+
+    axs[1].set_ylabel('relative counts')
+
+    for ax in axs:
+
+        set_font_size(ax, 16)
+
+    return fig
+
+
+def optimize_model_params(
+        SEED,
+        DURATION, DT, BOUNDS,
+        EXPERIMENT, ODOR_STATE,
+        MAX_TRAJS_EMPIRICAL,
+        N_TIME_POINTS_EMPIRICAL,
+        SAVE_FILE_PREFIX,
+        INITIAL_PARAMS, KS_WEIGHTS, MAX_ITERS):
+    """
+    Find optimal model parameters by fitting speed and angular velocity distributions of empirical
+    data.
+    """
+
+    # check to see if empirical time points have already been saved
+
+    file_name = '{}_{}_odor_{}.npy'.format(SAVE_FILE_PREFIX, EXPERIMENT, ODOR_STATE)
+
+    if os.path.isfile(file_name):
+
+        empirical = np.load(file_name)[0]
+
+    else:
+
+        print('extracting time points from data')
+
+        # get all trajectories
+
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPERIMENT, odor_state=ODOR_STATE, clean=True).\
+            limit(MAX_TRAJS_EMPIRICAL).all()
+
+        # get all speeds and angular velocities
+
+        cc = np.concatenate
+        speeds_empirical = cc([traj.velocities_a(session) for traj in trajs])
+        ws_empirical = cc([traj.angular_velocities_a(session) for traj in trajs])
+        ys_empirical = cc([traj.timepoint_field(session, 'position_y') for traj in trajs])
+
+        # sample a set of speeds and ws
+
+        np.random.seed(SEED)
+
+        speeds_empirical = np.random.choice(speeds_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ws_empirical = np.random.choice(ws_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ys_empirical = np.random.choice(ys_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+
+        empirical = {'speeds': speeds_empirical, 'ws': ws_empirical, 'ys': ys_empirical}
+
+        # save them for easy access next time
+
+        np.save(file_name, np.array([empirical]))
+
+    print('performing optimization')
+
+    # make a plume
+
+    pl = GaussianLaminarPlume(0, np.array([0., 0]), np.eye(2))
+
+    # define function to be optimized
+
+    def optim_fun(p):
+
+        np.random.seed(SEED)
+
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
+
+        # make agent and trajectory
+
+        ag = CenterlineInferringAgent(
+            tau=p[0], noise=p[1], bias=p[2], threshold=np.inf,
+            hit_trigger='peak', hit_influence=0,
+            k_0=np.eye(2), k_s=np.eye(2), tau_memory=1, bounds=BOUNDS)
+
+        traj = ag.track(pl, start_pos, DURATION, DT)
+
+        speeds = np.linalg.norm(traj['vs'], axis=1)
+        ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+        ws = ws[~np.isnan(ws)]
+        ys = traj['xs'][:, 1]
+
+        ks_speeds = stats.ks_2samp(speeds, empirical['speeds'])[0]
+        ks_ws = stats.ks_2samp(ws, empirical['ws'])[0]
+        ks_ys = stats.ks_2samp(ys, empirical['ys'])[0]
+
+        val = KS_WEIGHTS[0] * ks_speeds + KS_WEIGHTS[1] * ks_ws + KS_WEIGHTS[2] * ks_ys
+
+        if np.any(p < 0):
+
+            val += 10000
+
+        return val
+
+    # optimize it
+
+    p_best = optimize.fmin(optim_fun, np.array(INITIAL_PARAMS), maxiter=MAX_ITERS)
+
+    # generate one final trajectory
+
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    ag = CenterlineInferringAgent(
+        tau=p_best[0], noise=p_best[1], bias=p_best[2], threshold=np.inf,
+        hit_trigger='peak', hit_influence=0,
+        k_0=np.eye(2), k_s=np.eye(2), tau_memory=1, bounds=BOUNDS)
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+    ys = traj['xs'][:, 1]
+
+    # make plots of things that have been optimized
+
+    ## get bins
+
+    speed_max = max(speeds.max(), empirical['speeds'].max())
+    bins_speed = np.linspace(0, speed_max, 41, endpoint=True)
+    bincs_speed = 0.5 * (bins_speed[:-1] + bins_speed[1:])
+
+    w_max = max(ws.max(), empirical['ws'].max())
+    bins_w = np.linspace(0, w_max, 41, endpoint=True)
+    bincs_w = 0.5 * (bins_speed[:-1] + bins_speed[1:])
+
+    bins_y = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 41, endpoint=True)
+    bincs_y = 0.5 * (bins_y[:-1] + bins_y[1:])
+
+    cts_speed, _ = np.histogram(speeds, bins=bins_speed, normed=True)
+    cts_speed_empirical, _ = np.histogram(empirical['speeds'], bins=bins_speed, normed=True)
+
+    cts_w, _ = np.histogram(ws, bins=bins_w, normed=True)
+    cts_w_empirical, _ = np.histogram(empirical['ws'], bins=bins_w, normed=True)
+
+    cts_y, _ = np.histogram(ys, bins=bins_y, normed=True)
+    cts_y_empirical, _ = np.histogram(empirical['ys'], bins=bins_y, normed=True)
+
+    fig = plt.figure(figsize=(15, 8), tight_layout=True)
+    axs = []
+
+    axs.append(fig.add_subplot(2, 3, 1))
+    axs.append(fig.add_subplot(2, 3, 2))
+    axs.append(fig.add_subplot(2, 3, 3))
+
+    axs[0].plot(bincs_speed, cts_speed_empirical, lw=2, color='k')
+    axs[0].plot(bincs_speed, cts_speed, lw=2, color='r')
+
+    axs[0].set_xlabel('speed (m/s)')
+    axs[0].set_ylabel('rel. counts')
+
+    axs[0].legend(['empirical', 'model'])
+
+    axs[1].plot(bincs_w, cts_w_empirical, lw=2, color='k')
+    axs[1].plot(bincs_w, cts_w, lw=2, color='r')
+
+    axs[1].set_xlabel('ang. vel')
+
+    axs[2].plot(bincs_y, cts_y_empirical, lw=2, color='k')
+    axs[2].plot(bincs_y, cts_y, lw=2, color='r')
+
+    axs[2].set_xlabel('y')
+
+    axs.append(fig.add_subplot(2, 1, 2))
+
+    axs[3].plot(traj['xs'][:500, 0], traj['xs'][:500, 1], lw=2, color='k', zorder=0)
+    axs[3].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[3].set_xlim(*BOUNDS[0])
+    axs[3].set_ylim(*BOUNDS[1])
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
+
+    axs[3].set_title('example trajectory')
+
+    for ax in axs:
+
+        set_font_size(ax, 16)
+
+    # print out parameters
+
+    print('best params:')
+    print('tau = {}'.format(p_best[0]))
+    print('noise = {}'.format(p_best[1]))
+    print('bias = {}'.format(p_best[2]))
+
+    return fig
 
 
 def crossing_triggered_headings_all(
@@ -295,8 +565,8 @@ def crossing_triggered_headings_early_late(
     axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
     axs[2].axhline(0, color='gray', ls='--')
 
-    axs[2].set_xlabel('x')
-    axs[2].set_ylabel('y')
+    axs[2].set_xlabel('x (m)')
+    axs[2].set_ylabel('y (m)')
 
     for ax in axs:
 
@@ -305,7 +575,7 @@ def crossing_triggered_headings_early_late(
     return fig
 
 
-def crossing_triggered_headings_early_late_vs_bias(
+def crossing_triggered_headings_early_late_vary_param(
         SEED,
         N_TRAJS, DURATION, DT, START_POS_RANGE,
         PL_CONC, PL_MEAN, PL_K,
@@ -352,6 +622,8 @@ def crossing_triggered_headings_early_late_vs_bias(
     np.random.seed(SEED)
 
     early_late_heading_diffs = []
+    early_late_heading_diffs_lb = []
+    early_late_heading_diffs_ub = []
 
     for param_set in param_sets:
 
@@ -452,32 +724,54 @@ def crossing_triggered_headings_early_late_vs_bias(
         h_mean_early = np.nanmean(crossings_early, axis=0)
         h_mean_late = np.nanmean(crossings_late, axis=0)
 
+        h_sem_early = nansem(crossings_early, axis=0)
+        h_sem_late = nansem(crossings_late, axis=0)
+
         h_mean_diff = h_mean_late - h_mean_early
 
+        h_mean_diff_lb = h_mean_late - h_sem_late - (h_mean_early + h_sem_early)
+        h_mean_diff_ub = h_mean_late + h_sem_late - (h_mean_early - h_sem_early)
+
         early_late_heading_diff = h_mean_diff[(t > T_INT_START) * (t <= T_INT_END)].mean()
+        early_late_heading_diff_lb = h_mean_diff_lb[(t > T_INT_START) * (t <= T_INT_END)].mean()
+        early_late_heading_diff_ub = h_mean_diff_ub[(t > T_INT_START) * (t <= T_INT_END)].mean()
 
         early_late_heading_diffs.append(early_late_heading_diff)
+        early_late_heading_diffs_lb.append(early_late_heading_diff_lb)
+        early_late_heading_diffs_ub.append(early_late_heading_diff_ub)
 
     early_late_heading_diffs = np.array(early_late_heading_diffs)
+    early_late_heading_diffs_lb = np.array(early_late_heading_diffs_lb)
+    early_late_heading_diffs_ub = np.array(early_late_heading_diffs_ub)
 
     ## MAKE PLOTS
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4), tight_layout=True)
 
-    ax.scatter(x_plot, early_late_heading_diffs, color='k', lw=0)
+    ax.errorbar(
+        x_plot, early_late_heading_diffs,
+        yerr=[
+            early_late_heading_diffs - early_late_heading_diffs_lb,
+            early_late_heading_diffs_ub - early_late_heading_diffs,
+        ],
+        color='k', fmt='--o')
     ax.axhline(0, color='gray', ls='--')
 
-    if np.max(early_late_heading_diffs) > 0:
+    if np.max(early_late_heading_diffs_ub) > 0:
 
-        y_range = np.max(early_late_heading_diffs) - np.min(early_late_heading_diffs)
+        y_range = np.max(early_late_heading_diffs_ub) - np.min(early_late_heading_diffs_lb)
 
     else:
 
-        y_range = -np.min(early_late_heading_diffs)
+        y_range = -np.min(early_late_heading_diffs_lb)
 
-    y_min = np.min(early_late_heading_diffs) - 0.1 * y_range
-    y_max = max(np.max(early_late_heading_diffs), 0) + 0.1 * y_range
+    x_min = x_plot[0] - (x_plot[1] - x_plot[0])/2
+    x_max = x_plot[-1] + (x_plot[-1] - x_plot[-2]) / 2
 
+    y_min = np.min(early_late_heading_diffs_lb) - 0.1 * y_range
+    y_max = max(np.max(early_late_heading_diffs_ub), 0) + 0.1 * y_range
+
+    ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
     ax.set_xlabel(vary)
