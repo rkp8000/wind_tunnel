@@ -7,16 +7,12 @@ class GaussianLaminarPlume(object):
     Simple cylindrical plume with Gaussian cross section.
     """
 
-    def __init__(self, conc, mu, k):
-
-        if not np.all(np.linalg.eigvals(k) > 0):
-
-            raise ValueError('k must be positive definite')
+    def __init__(self, conc, mu, std):
 
         self.conc = conc
         self.mu = mu.flatten()[:, None]
-        self.k = k
-        self.k_inv = np.linalg.inv(k)
+        self.k = np.array([[std[0] ** 2, 0.], [0, std[1] ** 2]])
+        self.k_inv = np.linalg.inv(self.k)
 
     def get_odor(self, x):
         """
