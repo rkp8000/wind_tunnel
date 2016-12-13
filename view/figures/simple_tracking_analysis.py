@@ -82,6 +82,104 @@ def example_trajectory_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
     return fig
 
 
+def example_trajectory_with_plume(
+        SEED, DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, HIT_INFLUENCE,
+        TAU_MEMORY, K_0, K_S, BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD):
+    """
+    Create an example trajectory and plot some of the resulting covariates.
+    """
+
+    # build plume and agent
+
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
+    ag = CenterlineInferringAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
+
+    # generate the trajectory
+
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    # plot trajectory
+
+    fig = plt.figure(figsize=(15, 10), tight_layout=True)
+    axs = [fig.add_subplot(4, 1, 1)]
+
+    axs[-1].plot(traj['xs'][:, 0], traj['xs'][:, 1], lw=2, color='k', zorder=0)
+    axs[-1].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[-1].set_xlim(*BOUNDS[0])
+    axs[-1].set_ylim(*BOUNDS[1])
+
+    axs[-1].set_xlabel('x (m)')
+    axs[-1].set_ylabel('y (m)')
+
+    axs[-1].set_title('example trajectory')
+
+    # plot some histograms
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+
+    axs.append(fig.add_subplot(4, 2, 3))
+    axs.append(fig.add_subplot(4, 2, 4))
+
+    axs[-2].hist(speeds, bins=30, lw=0, normed=True)
+    axs[-1].hist(ws, bins=30, lw=0, normed=True)
+
+    axs[-2].set_xlabel('speed (m/s)')
+    axs[-1].set_xlabel('ang. vel (rad/s)')
+
+    axs[-2].set_ylabel('relative counts')
+
+    axs.append(fig.add_subplot(4, 1, 3))
+    axs.append(axs[-1].twinx())
+
+    ts = traj['ts']
+    odors = traj['odors']
+    cl_vars = np.trace(traj['centerline_ks'], axis1=1, axis2=2)
+
+    axs[-2].plot(ts, odors, color='r', lw=2)
+    axs[-1].plot(ts, cl_vars, color='k', lw=2)
+
+    axs[-2].set_xlabel('time (s)')
+    axs[-2].set_ylabel('odor')
+    axs[-1].set_ylabel('centerline var')
+
+    axs.append(fig.add_subplot(4, 1, 4))
+    axs.append(axs[-1].twinx())
+
+    bs = traj['bs']
+
+    axs[-2].plot(ts, odors, color='r', lw=2)
+    axs[-1].plot(ts, bs[:, 0], color='k', lw=2)
+
+    axs[-2].set_xlabel('time (s)')
+    axs[-2].set_ylabel('odor')
+    axs[-1].set_ylabel('upwind bias')
+
+    for ax in axs:
+
+        set_font_size(ax, 16)
+
+    return fig
+
+
 def optimize_model_params(
         SEED,
         DURATION, DT, BOUNDS,
@@ -89,7 +187,7 @@ def optimize_model_params(
         MAX_TRAJS_EMPIRICAL,
         N_TIME_POINTS_EMPIRICAL,
         SAVE_FILE_PREFIX,
-        INITIAL_PARAMS, KS_WEIGHTS, MAX_ITERS):
+        INITIAL_PARAMS, MAX_ITERS):
     """
     Find optimal model parameters by fitting speed and angular velocity distributions of empirical
     data.
@@ -138,7 +236,7 @@ def optimize_model_params(
 
     # make a plume
 
-    pl = GaussianLaminarPlume(0, np.array([0., 0]), np.eye(2))
+    pl = GaussianLaminarPlume(0, np.zeros((2,)), np.ones((2,)))
 
     # define function to be optimized
 
@@ -170,7 +268,9 @@ def optimize_model_params(
         ks_ws = stats.ks_2samp(ws, empirical['ws'])[0]
         ks_ys = stats.ks_2samp(ys, empirical['ys'])[0]
 
-        val = KS_WEIGHTS[0] * ks_speeds + KS_WEIGHTS[1] * ks_ws + KS_WEIGHTS[2] * ks_ys
+        val = ks_speeds + ks_ws + ks_ys
+
+        # punish unallowable values
 
         if np.any(p < 0):
 
@@ -214,7 +314,7 @@ def optimize_model_params(
 
     w_max = max(ws.max(), empirical['ws'].max())
     bins_w = np.linspace(0, w_max, 41, endpoint=True)
-    bincs_w = 0.5 * (bins_speed[:-1] + bins_speed[1:])
+    bincs_w = 0.5 * (bins_w[:-1] + bins_w[1:])
 
     bins_y = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 41, endpoint=True)
     bincs_y = 0.5 * (bins_y[:-1] + bins_y[1:])
@@ -241,17 +341,17 @@ def optimize_model_params(
     axs[0].set_xlabel('speed (m/s)')
     axs[0].set_ylabel('rel. counts')
 
-    axs[0].legend(['empirical', 'model'])
+    axs[0].legend(['data', 'model'], fontsize=16)
 
     axs[1].plot(bincs_w, cts_w_empirical, lw=2, color='k')
     axs[1].plot(bincs_w, cts_w, lw=2, color='r')
 
-    axs[1].set_xlabel('ang. vel')
+    axs[1].set_xlabel('ang. vel. (rad/s)')
 
     axs[2].plot(bincs_y, cts_y_empirical, lw=2, color='k')
     axs[2].plot(bincs_y, cts_y, lw=2, color='r')
 
-    axs[2].set_xlabel('y')
+    axs[2].set_xlabel('y (m)')
 
     axs.append(fig.add_subplot(2, 1, 2))
 
@@ -282,13 +382,13 @@ def optimize_model_params(
 
 def crossing_triggered_headings_all(
         SEED,
-        N_TRAJS, DURATION, DT, START_POS_RANGE,
-        PL_CONC, PL_MEAN, PL_K,
+        N_TRAJS, DURATION, DT,
         TAU, NOISE, BIAS, AGENT_THRESHOLD,
-        HIT_TRIGGER, HIT_INFLUENCE,
-        K_0, K_S,
+        HIT_INFLUENCE, TAU_MEMORY, K_0, K_S,
+        BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD,
         ANALYSIS_THRESHOLD, H_MIN_PEAK, H_MAX_PEAK,
-        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER):
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER, Y_LIM):
     """
     Fly several agents through a simulated plume and plot their plume-crossing-triggered
     headings.
@@ -296,10 +396,15 @@ def crossing_triggered_headings_all(
 
     # build plume and agent
 
-    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_K)
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
     ag = CenterlineInferringAgent(
         tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
-        hit_trigger=HIT_TRIGGER, hit_influence=HIT_INFLUENCE, k_0=K_0, k_s=K_S)
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
 
     # generate trajectories
 
@@ -311,12 +416,11 @@ def crossing_triggered_headings_all(
 
         # choose random start position
 
-        start_pos = np.array(
-            [
-                0,
-                np.random.uniform(START_POS_RANGE[0][0], START_POS_RANGE[0][1]),
-                np.random.uniform(START_POS_RANGE[1][0], START_POS_RANGE[1][1]),
-            ])
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
 
         # make trajectory
 
@@ -386,6 +490,7 @@ def crossing_triggered_headings_all(
 
     ax.axvline(0, ls='--', color='gray')
 
+    ax.set_ylim(*Y_LIM)
     ax.set_xlabel('time since peak (s)')
 
     if SUBTRACT_PEAK_HEADING:
@@ -402,13 +507,14 @@ def crossing_triggered_headings_all(
 
 
 def crossing_triggered_headings_early_late(
-        SEED,
-        N_TRAJS, DURATION, DT, START_POS_RANGE,
-        PL_CONC, PL_MEAN, PL_K,
+        SEED, N_TRAJS, DURATION, DT,
         TAU, NOISE, BIAS, AGENT_THRESHOLD,
-        HIT_TRIGGER, HIT_INFLUENCE,
-        K_0, K_S,
-        ANALYSIS_THRESHOLD, H_MIN_PEAK, H_MAX_PEAK,
+        HIT_INFLUENCE, TAU_MEMORY,
+        K_0, K_S, BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD,
+        ANALYSIS_THRESHOLD,
+        H_MIN_PEAK, H_MAX_PEAK,
+        X_MIN_PEAK, X_MAX_PEAK,
         EARLY_LESS_THAN,
         SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER):
     """
@@ -418,12 +524,17 @@ def crossing_triggered_headings_early_late(
 
     # build plume and agent
 
-    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_K)
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
     ag = CenterlineInferringAgent(
         tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
-        hit_trigger=HIT_TRIGGER, hit_influence=HIT_INFLUENCE, k_0=K_0, k_s=K_S)
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
 
-    # generate trajectories
+    # GENERATE TRAJECTORIES
 
     np.random.seed(SEED)
 
@@ -433,12 +544,11 @@ def crossing_triggered_headings_early_late(
 
         # choose random start position
 
-        start_pos = np.array(
-            [
-                0,
-                np.random.uniform(START_POS_RANGE[0][0], START_POS_RANGE[0][1]),
-                np.random.uniform(START_POS_RANGE[1][0], START_POS_RANGE[1][1]),
-            ])
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
 
         # make trajectory
 
@@ -447,6 +557,12 @@ def crossing_triggered_headings_early_late(
         traj['headings'] = heading(traj['vs'])[:, 2]
 
         trajs.append(traj)
+
+    # ANALYZE TRAJECTORIES
+
+    n_crossings = []
+
+    # collect early and late crossings
 
     crossings_early = []
     crossings_late = []
@@ -459,9 +575,15 @@ def crossing_triggered_headings_early_late(
         starts, onsets, peak_times, offsets, ends = \
             segment_by_threshold(traj['odors'], ANALYSIS_THRESHOLD)[0].T
 
+        n_crossings.append(len(peak_times))
+
         for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
 
             if not (H_MIN_PEAK <= traj['headings'][peak_time] < H_MAX_PEAK):
+
+                continue
+
+            if not (X_MIN_PEAK <= traj['xs'][peak_time, 0] < X_MAX_PEAK):
 
                 continue
 
@@ -500,6 +622,8 @@ def crossing_triggered_headings_early_late(
 
                 crossings_late.append(crossing)
 
+    n_crossings = np.array(n_crossings)
+
     crossings_early = np.array(crossings_early)
     crossings_late = np.array(crossings_late)
 
@@ -511,13 +635,10 @@ def crossing_triggered_headings_early_late(
     h_mean_late = np.nanmean(crossings_late, axis=0)
     h_sem_late = nansem(crossings_late, axis=0)
 
-    speeds = np.concatenate(
-        [np.linalg.norm(traj['vs'], axis=1) for traj in trajs])
+    fig, axs = plt.figure(figsize=(15, 15), tight_layout=True), []
 
-    fig, axs = plt.figure(figsize=(15, 10), tight_layout=True), []
-
-    axs.append(fig.add_subplot(2, 2, 1))
-    axs.append(fig.add_subplot(2, 2, 2))
+    axs.append(fig.add_subplot(3, 2, 1))
+    axs.append(fig.add_subplot(3, 2, 2))
 
     handles = []
 
@@ -555,18 +676,35 @@ def crossing_triggered_headings_early_late(
 
     axs[0].legend(handles=handles, fontsize=16)
 
-    axs[1].hist(speeds, bins=50, lw=0, normed=True)
+    bin_min = -0.5
+    bin_max = n_crossings.max() + 0.5
 
-    axs[1].set_xlabel('speed (m/s)')
-    axs[1].set_ylabel('proportion of time points')
+    bins = np.linspace(bin_min, bin_max, bin_max - bin_min + 1, endpoint=True)
 
-    axs.append(fig.add_subplot(2, 1, 2))
+    axs[1].hist(n_crossings, bins=bins, lw=0, normed=True)
+    axs[1].set_xlim(bin_min, bin_max)
+
+    axs[1].set_xlabel('number of crossings')
+    axs[1].set_ylabel('proportion of trajectories')
+
+    axs.append(fig.add_subplot(3, 1, 2))
 
     axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
     axs[2].axhline(0, color='gray', ls='--')
 
     axs[2].set_xlabel('x (m)')
     axs[2].set_ylabel('y (m)')
+
+    axs.append(fig.add_subplot(3, 1, 3))
+
+    all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
+    x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
+    y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
+
+    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
 
     for ax in axs:
 
@@ -576,207 +714,279 @@ def crossing_triggered_headings_early_late(
 
 
 def crossing_triggered_headings_early_late_vary_param(
-        SEED,
-        N_TRAJS, DURATION, DT, START_POS_RANGE,
-        PL_CONC, PL_MEAN, PL_K,
-        TAU, NOISE, BIAS, THRESHOLD,
-        HIT_TRIGGER, HIT_INFLUENCE,
-        K_0, K_S,
+        SEED, SAVE_FILE, N_TRAJS, DURATION, DT,
+        TAU, NOISE, BIAS, HIT_INFLUENCE, SQRT_K_0,
+        VARIABLE_PARAMS, BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD,
         H_MIN_PEAK, H_MAX_PEAK,
+        X_MIN_PEAK, X_MAX_PEAK,
         EARLY_LESS_THAN,
         SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER,
-        T_INT_START, T_INT_END):
+        T_INT_START, T_INT_END, AX_GRID):
     """
     Fly several agents through a simulated plume and plot their plume-crossing-triggered
     headings.
     """
 
-    if len(BIAS) > 1:
+    # try to open saved results
 
-        vary = 'bias'
-        x_plot = BIAS
+    if os.path.isfile(SAVE_FILE):
 
-    elif len(HIT_INFLUENCE) > 1:
-
-        vary = 'hit_influence'
-        x_plot = HIT_INFLUENCE
-
-    elif len(THRESHOLD) > 1:
-
-        vary = 'threshold'
-        x_plot = THRESHOLD
-
-    elif len(K_S) > 1:
-
-        vary = 'k_s'
-        x_plot = K_S
+        print('Results file found. Loading results file.')
+        results = np.load(SAVE_FILE)
 
     else:
 
-        raise Exception('One of the parameters must vary.')
+        print('Results file not found. Running analysis...')
+        np.random.seed(SEED)
 
-    param_sets = cproduct(BIAS, HIT_INFLUENCE, THRESHOLD, K_S)
+        # build plume
 
-    # generate trajectories
+        pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
 
-    np.random.seed(SEED)
+        # loop over all parameter sets
 
-    early_late_heading_diffs = []
-    early_late_heading_diffs_lb = []
-    early_late_heading_diffs_ub = []
+        varying_params = []
+        fixed_params = []
 
-    for param_set in param_sets:
+        early_late_heading_diffs_all = []
+        early_late_heading_diffs_lb_all = []
+        early_late_heading_diffs_ub_all = []
 
-        print(param_set)
+        for variable_params in VARIABLE_PARAMS:
 
-        bias, hit_influence, threshold = param_set[:3]
+            print('Variable params: {}'.format(variable_params))
 
-        k_s = np.array([
-            [param_set[3], 0.],
-            [0, param_set[3]]
-            ])
+            assert set(variable_params.keys()) == set(
+                ['threshold', 'tau_memory', 'sqrt_k_s'])
 
-        # build plume and agent
+            # identify which parameter is varying
 
-        pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_K)
-        ag = CenterlineInferringAgent(
-            tau=TAU, noise=NOISE, bias=bias, threshold=threshold,
-            hit_trigger=HIT_TRIGGER, hit_influence=hit_influence, k_0=K_0, k_s=k_s)
+            for key, vals in variable_params.items():
 
-        trajs = []
+                if isinstance(vals, list):
 
-        for _ in range(N_TRAJS):
+                    varying_params.append((key, vals))
+                    fixed_params.append((
+                        [(k, v) for k, v in variable_params.items() if k != key]))
 
-            # choose random start position
+                    n_param_sets = len(vals)
 
-            start_pos = np.array(
-                [
-                    0,
-                    np.random.uniform(START_POS_RANGE[0][0], START_POS_RANGE[0][1]),
-                    np.random.uniform(START_POS_RANGE[1][0], START_POS_RANGE[1][1]),
+                    break
+
+            # make other parameters into lists so they can all be looped over nicely
+
+            for key, vals in variable_params.items():
+
+                if not isinstance(vals, list):
+
+                    variable_params[key] = [vals for _ in range(n_param_sets)]
+
+            early_late_heading_diffs = []
+            early_late_heading_diffs_lb = []
+            early_late_heading_diffs_ub = []
+
+            for param_set_ctr in range(len(variable_params.values()[0])):
+
+                threshold = variable_params['threshold'][param_set_ctr]
+                hit_influence = HIT_INFLUENCE
+                tau_memory = variable_params['tau_memory'][param_set_ctr]
+                k_0 = np.array([
+                    [SQRT_K_0 ** 2, 0],
+                    [0, SQRT_K_0 ** 2],
+                ])
+                k_s = np.array([
+                    [variable_params['sqrt_k_s'][param_set_ctr] ** 2, 0],
+                    [0, variable_params['sqrt_k_s'][param_set_ctr] ** 2],
                 ])
 
-            # make trajectory
+                # build tracking agent
 
-            traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
+                ag = CenterlineInferringAgent(
+                    tau=TAU, noise=NOISE, bias=BIAS, threshold=threshold,
+                    hit_trigger='peak', hit_influence=hit_influence, tau_memory=tau_memory,
+                    k_0=k_0, k_s=k_s, bounds=BOUNDS)
 
-            traj['headings'] = heading(traj['vs'])[:, 2]
+                trajs = []
 
-            trajs.append(traj)
+                for _ in range(N_TRAJS):
 
-        crossings_early = []
-        crossings_late = []
+                    # choose random start position
 
-        ts_before = int(T_BEFORE / DT)
-        ts_after = int(T_AFTER / DT)
+                    start_pos = np.array([
+                        np.random.uniform(*BOUNDS[0]),
+                        np.random.uniform(*BOUNDS[1]),
+                        np.random.uniform(*BOUNDS[2]),
+                    ])
 
-        for traj in trajs:
+                    # make trajectory
 
-            starts, onsets, peak_times, offsets, ends = \
-                segment_by_threshold(traj['odors'], threshold)[0].T
+                    traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
 
-            for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+                    traj['headings'] = heading(traj['vs'])[:, 2]
 
-                if not (H_MIN_PEAK <= traj['headings'][peak_time] < H_MAX_PEAK):
+                    trajs.append(traj)
 
-                    continue
+                crossings_early = []
+                crossings_late = []
 
-                crossing = np.nan * np.zeros((ts_before + ts_after,))
+                ts_before = int(T_BEFORE / DT)
+                ts_after = int(T_AFTER / DT)
 
-                ts_before_crossing = peak_time - start
-                ts_after_crossing = end - peak_time
+                for traj in trajs:
 
-                if ts_before_crossing >= ts_before:
+                    starts, onsets, peak_times, offsets, ends = \
+                        segment_by_threshold(traj['odors'], threshold)[0].T
 
-                    crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+                    for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
 
-                else:
+                        if not (H_MIN_PEAK <= traj['headings'][peak_time] < H_MAX_PEAK):
 
-                    crossing[ts_before - ts_before_crossing:ts_before] = \
-                        traj['headings'][start:peak_time]
+                            continue
 
-                if ts_after_crossing >= ts_after:
+                        if not (X_MIN_PEAK <= traj['xs'][peak_time, 0] < X_MAX_PEAK):
 
-                    crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+                            continue
 
-                else:
+                        crossing = np.nan * np.zeros((ts_before + ts_after,))
 
-                    crossing[ts_before:ts_before + ts_after_crossing] = \
-                        traj['headings'][peak_time:end]
+                        ts_before_crossing = peak_time - start
+                        ts_after_crossing = end - peak_time
 
-                if SUBTRACT_PEAK_HEADING:
+                        if ts_before_crossing >= ts_before:
 
-                    crossing -= crossing[ts_before]
+                            crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
 
-                if ctr < EARLY_LESS_THAN:
+                        else:
 
-                    crossings_early.append(crossing)
+                            crossing[ts_before - ts_before_crossing:ts_before] = \
+                                traj['headings'][start:peak_time]
 
-                else:
+                        if ts_after_crossing >= ts_after:
 
-                    crossings_late.append(crossing)
+                            crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
 
-        crossings_early = np.array(crossings_early)
-        crossings_late = np.array(crossings_late)
+                        else:
 
-        t = np.arange(-ts_before, ts_after) * DT
+                            crossing[ts_before:ts_before + ts_after_crossing] = \
+                                traj['headings'][peak_time:end]
 
-        h_mean_early = np.nanmean(crossings_early, axis=0)
-        h_mean_late = np.nanmean(crossings_late, axis=0)
+                        if SUBTRACT_PEAK_HEADING:
 
-        h_sem_early = nansem(crossings_early, axis=0)
-        h_sem_late = nansem(crossings_late, axis=0)
+                            crossing -= crossing[ts_before]
 
-        h_mean_diff = h_mean_late - h_mean_early
+                        if ctr < EARLY_LESS_THAN:
 
-        h_mean_diff_lb = h_mean_late - h_sem_late - (h_mean_early + h_sem_early)
-        h_mean_diff_ub = h_mean_late + h_sem_late - (h_mean_early - h_sem_early)
+                            crossings_early.append(crossing)
 
-        early_late_heading_diff = h_mean_diff[(t > T_INT_START) * (t <= T_INT_END)].mean()
-        early_late_heading_diff_lb = h_mean_diff_lb[(t > T_INT_START) * (t <= T_INT_END)].mean()
-        early_late_heading_diff_ub = h_mean_diff_ub[(t > T_INT_START) * (t <= T_INT_END)].mean()
+                        else:
 
-        early_late_heading_diffs.append(early_late_heading_diff)
-        early_late_heading_diffs_lb.append(early_late_heading_diff_lb)
-        early_late_heading_diffs_ub.append(early_late_heading_diff_ub)
+                            crossings_late.append(crossing)
 
-    early_late_heading_diffs = np.array(early_late_heading_diffs)
-    early_late_heading_diffs_lb = np.array(early_late_heading_diffs_lb)
-    early_late_heading_diffs_ub = np.array(early_late_heading_diffs_ub)
+                crossings_early = np.array(crossings_early)
+                crossings_late = np.array(crossings_late)
+
+                t = np.arange(-ts_before, ts_after) * DT
+
+                h_mean_early = np.nanmean(crossings_early, axis=0)
+                h_mean_late = np.nanmean(crossings_late, axis=0)
+
+                h_sem_early = nansem(crossings_early, axis=0)
+                h_sem_late = nansem(crossings_late, axis=0)
+
+                h_mean_diff = h_mean_late - h_mean_early
+
+                h_mean_diff_lb = h_mean_late - h_sem_late - (h_mean_early + h_sem_early)
+                h_mean_diff_ub = h_mean_late + h_sem_late - (h_mean_early - h_sem_early)
+
+                early_late_heading_diff = \
+                    h_mean_diff[(t > T_INT_START) * (t <= T_INT_END)].mean()
+                early_late_heading_diff_lb = \
+                    h_mean_diff_lb[(t > T_INT_START) * (t <= T_INT_END)].mean()
+                early_late_heading_diff_ub = \
+                    h_mean_diff_ub[(t > T_INT_START) * (t <= T_INT_END)].mean()
+
+                early_late_heading_diffs.append(early_late_heading_diff)
+                early_late_heading_diffs_lb.append(early_late_heading_diff_lb)
+                early_late_heading_diffs_ub.append(early_late_heading_diff_ub)
+
+            early_late_heading_diffs_all.append(np.array(early_late_heading_diffs))
+            early_late_heading_diffs_lb_all.append(np.array(early_late_heading_diffs_lb))
+            early_late_heading_diffs_ub_all.append(np.array(early_late_heading_diffs_ub))
+
+        # save results
+
+        results = np.array([
+            {
+                'varying_params': varying_params,
+                'fixed_params': fixed_params,
+                'early_late_heading_diffs_all': early_late_heading_diffs_all,
+                'early_late_heading_diffs_lb_all': early_late_heading_diffs_lb_all,
+                'early_late_heading_diffs_ub_all': early_late_heading_diffs_ub_all,
+             }])
+        np.save(SAVE_FILE, results)
+
+    results = results[0]
 
     ## MAKE PLOTS
 
-    fig, ax = plt.subplots(1, 1, figsize=(5, 4), tight_layout=True)
+    fig_size = (5 * AX_GRID[1], 4 * AX_GRID[0])
+    fig, axs = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
 
-    ax.errorbar(
-        x_plot, early_late_heading_diffs,
-        yerr=[
-            early_late_heading_diffs - early_late_heading_diffs_lb,
-            early_late_heading_diffs_ub - early_late_heading_diffs,
-        ],
-        color='k', fmt='--o')
-    ax.axhline(0, color='gray', ls='--')
+    for ax_ctr in range(len(results['varying_params'])):
 
-    if np.max(early_late_heading_diffs_ub) > 0:
+        ax = axs.flatten()[ax_ctr]
 
-        y_range = np.max(early_late_heading_diffs_ub) - np.min(early_late_heading_diffs_lb)
+        ys_plot = results['early_late_heading_diffs_all'][ax_ctr]
+        ys_err = [
+            ys_plot - results['early_late_heading_diffs_lb_all'][ax_ctr],
+            results['early_late_heading_diffs_ub_all'][ax_ctr] - ys_plot
+        ]
 
-    else:
+        xs_name = results['varying_params'][ax_ctr][0]
+        xs_plot = np.arange(len(ys_plot))
 
-        y_range = -np.min(early_late_heading_diffs_lb)
+        ax.errorbar(
+            xs_plot, ys_plot, yerr=ys_err, color='k', fmt='--o')
 
-    x_min = x_plot[0] - (x_plot[1] - x_plot[0])/2
-    x_max = x_plot[-1] + (x_plot[-1] - x_plot[-2]) / 2
+        ax.axhline(0, color='gray')
 
-    y_min = np.min(early_late_heading_diffs_lb) - 0.1 * y_range
-    y_max = max(np.max(early_late_heading_diffs_ub), 0) + 0.1 * y_range
+        if np.max(results['early_late_heading_diffs_ub_all'][ax_ctr]) > 0:
 
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
+            y_range = np.max(results['early_late_heading_diffs_ub_all'][ax_ctr]) - \
+                      np.min(results['early_late_heading_diffs_lb_all'][ax_ctr])
 
-    ax.set_xlabel(vary)
-    ax.set_ylabel('mean heading difference\nfor late vs. early crossings')
+        else:
 
-    set_font_size(ax, 16)
+            y_range = -np.min(results['early_late_heading_diffs_lb_all'][ax_ctr])
+
+        y_min = np.min(
+            results['early_late_heading_diffs_lb_all'][ax_ctr]) - 0.1 * y_range
+        y_max = max(np.max(
+            results['early_late_heading_diffs_ub_all'][ax_ctr]), 0) + 0.1 * y_range
+
+        ax.set_xlim(-1, len(ys_plot))
+        ax.set_xticks(xs_plot)
+        
+        x_ticklabels = results['varying_params'][ax_ctr][1]
+        
+        if xs_name == 'threshold': 
+            
+            x_ticklabels = ['{0:.4f}'.format(xtl * (0.0476/526)) for xtl in x_ticklabels]
+            
+        ax.set_xticklabels(x_ticklabels)
+
+        ax.set_ylim(y_min, y_max)
+
+        if xs_name == 'tau_memory': x_label = 'tau_m (s)'
+        elif xs_name == 'threshold': x_label = 'threshold (% ethanol)'
+        else: x_label = xs_name
+            
+        ax.set_xlabel(x_label)
+        ax.set_ylabel('mean heading difference\nfor late vs. early crossings')
+
+    for ax in axs.flatten():
+
+        set_font_size(ax, 16)
 
     return fig

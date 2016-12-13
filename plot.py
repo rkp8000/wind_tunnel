@@ -2,6 +2,8 @@
 Some reusable functions for plotting.
 """
 from __future__ import print_function, division
+from matplotlib.pyplot import cm
+import numpy as np
 
 
 def set_font_size(ax, font_size):
@@ -31,3 +33,14 @@ def set_colors(ax, color):
     ax.title.set_color(color)
     ax.xaxis.label.set_color(color)
     ax.yaxis.label.set_color(color)
+
+
+def get_n_colors(n, colormap='rainbow'):
+    """
+    Return a list of colors equally spaced over a color map.
+    :param n: number of colors
+    :param colormap: colormap to use
+    :return: list of colors that can be passed directly to color argument of plotting
+    """
+
+    return getattr(cm, colormap)(np.linspace(0, 1, n))

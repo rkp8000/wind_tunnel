@@ -112,11 +112,13 @@ class CenterlineInferringAgent(object):
         cw = (mu - x[1:])
         cw /= np.linalg.norm(cw)
 
-        # get upwind component
+        # get certainty
 
-        factor = (1. / np.sqrt(np.trace(k))) - (1. / np.sqrt(np.trace(self.k_0)))
+        certainty = np.linalg.det(np.linalg.inv(k))
 
-        uw = -self.hit_influence * factor
+        # get bias from certainty
+
+        uw = -self.hit_influence * certainty
 
         bias = np.array([uw, cw[0], cw[1]])
         bias *= (self.bias / np.linalg.norm(bias))

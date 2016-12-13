@@ -122,3 +122,27 @@ def f_test(rss_reduced, rss_full, df_reduced, df_full, n):
     p_val = 1 - stats.f.cdf(f, df_full - df_reduced, n - df_full)
 
     return f, p_val
+
+
+def partial_corr(x, y, controls):
+    """
+    Calculate the partial correlation of x and y conditioned on a set of
+    control variables. This is calculated by first determining
+    :param x: 1D array
+    :param y: 1D array
+    :param controls: list of 1D arrays
+    :return: partial correlation coefficient, p-value
+    """
+
+    for control in controls: assert len(control) == len(x) == len(y)
+
+    control_array = np.array(controls).T
+    residuals = []
+
+    for v in [x, y]:
+
+        lrg = linear_model.LinearRegression()
+        lrg.fit(control_array, v)
+        residuals.append(v - lrg.predict(control_array))
+
+    return stats.pearsonr(residuals[0], residuals[1])

@@ -244,7 +244,7 @@ def example_traj_and_crossings(
         t, headings_mean - headings_sem, headings_mean + headings_sem,
         color='k', alpha=0.2)
 
-    axs[2].set_xlabel('time since odor peak (s)')
+    axs[2].set_xlabel('time since crossing (s)')
     axs[2].set_ylabel('heading (degrees)')
 
     for ax in axs:
@@ -271,6 +271,8 @@ def heading_concentration_dependence(
     Then fit a binary threshold model and a model with a linear piece to the data and see if
     the linear one fits significantly better.
     """
+
+    conversion_factor = 0.0476 / 526
 
     ## CALCULATE PARTIAL CORRELATIONS
 
@@ -312,7 +314,7 @@ def heading_concentration_dependence(
 
                 continue
 
-            c_maxs.append(crossing.max_odor)
+            c_maxs.append(crossing.max_odor * conversion_factor)
             x_0s.append(position_x)
             h_0s.append(heading_xyz)
 
@@ -394,7 +396,6 @@ def heading_concentration_dependence(
 
         handle = axs[0].plot(
             t, data[cg_id]['partial_corrs'], color=color, lw=2, ls='-', label=label)[0]
-        axs[0].fill_between(t, data[cg_id]['lbs'], data[cg_id]['ubs'], color=color, alpha=0.2)
 
         handles.append(handle)
 
@@ -402,9 +403,10 @@ def heading_concentration_dependence(
 
         axs[1].plot(t[t > 0], data[cg_id]['p_vals'][t > 0], color=color, lw=2, ls='--')
 
+    axs[0].axhline(0, color='gray', ls='--')
     axs[0].set_xlim(-T_BEFORE, T_AFTER)
 
-    axs[0].set_xlabel('time of heading measurement\nsince odor peak (s)')
+    axs[0].set_xlabel('time of heading measurement\nsince crossing (s)')
     axs[0].set_ylabel('heading-concentration\npartial correlation')
     axs[0].legend(handles=handles, loc='upper left')
 
@@ -483,9 +485,9 @@ def heading_concentration_dependence(
     axs[-1].set_xlim(0, data[CROSSING_GROUP_EXAMPLE_ID]['c_maxs'].max())
     axs[-1].set_ylim(0, 180)
 
-    axs[-1].set_xlabel('c_max')
-    axs[-1].set_ylabel('heading at {} s\n since odor peak'.format(T_MODELS[CROSSING_GROUP_EXAMPLE_ID]))
-    axs[-1].set_title('h_T vs. c_max for {}'.format(CROSSING_GROUP_LABELS[CROSSING_GROUP_EXAMPLE_ID]))
+    axs[-1].set_xlabel('concentration (% ethanol)')
+    axs[-1].set_ylabel('heading at {} s\n since crossing'.format(T_MODELS[CROSSING_GROUP_EXAMPLE_ID]))
+    axs[-1].set_title('heading-concentration relationship for {}'.format(CROSSING_GROUP_LABELS[CROSSING_GROUP_EXAMPLE_ID]))
 
     for ax in axs:
 
@@ -622,21 +624,21 @@ def early_vs_late_heading_timecourse(
                 t, headings_mean - headings_sem, headings_mean + headings_sem,
                 color=color, alpha=ALPHA, zorder=1)
 
-        ax.set_xlabel('time since odor peak (s)')
+        ax.set_xlabel('time since crossing (s)')
 
         if SUBTRACT_INITIAL_HEADING:
 
-            ax.set_ylabel('$\Delta$ heading (degrees)')
+            ax.set_ylabel('$\Delta$ heading (deg.)')
 
         else:
 
-            ax.set_ylabel('heading (degrees)')
+            ax.set_ylabel('heading (deg.)')
 
         ax.set_title(CROSSING_GROUP_LABELS[cg_id])
 
         if cg_id == LEGEND_CROSSING_GROUP_ID:
 
-            ax.legend(handles=handles, loc='lower left')
+            ax.legend(handles=handles, loc='upper right')
 
         set_fontsize(ax, FONT_SIZE)
 

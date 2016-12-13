@@ -72,6 +72,10 @@ class Trajectory(Base):
     experiment = relationship("Experiment", backref='trajectories')
 
     @property
+    def duration(self):
+        return (self.end_timepoint_id - self.start_timepoint_id) / 100.
+
+    @property
     def timepoint_ids_extended(self):
         return np.arange(self.start_timepoint_id, self.end_timepoint_id + 2)
 
