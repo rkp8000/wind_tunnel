@@ -8,6 +8,7 @@ from scipy.stats import ks_2samp
 
 import stats
 from axis_tools import set_fontsize
+from plot import get_n_colors
 
 from experimental_constants import DT
 
@@ -228,12 +229,16 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
     # convert times to time steps
     ts_before = int(round(T_BEFORE / DT))
     ts_after = int(round(T_AFTER / DT))
+    scatter_ts = [ts_before + int(round(t / DT)) for t in SCATTER_INTEGRATION_WINDOW]
 
     # loop over crossing groups
     x_0s_dict = {}
     headings_dict = {}
     residuals_dict = {}
     p_vals_dict = {}
+
+    scatter_ys_dict = {}
+    crossing_ns_dict = {}
 
     for cg_id in CROSSING_GROUP_IDS:
 
@@ -251,13 +256,22 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
         x_0s_dict[cg_id] = {}
         headings_dict[cg_id] = {}
 
+        scatter_ys_dict[cg_id] = {}
+        crossing_ns_dict[cg_id] = {}
+
         for label in ['early', 'late']:
 
             x_0s = []
             headings = []
+            scatter_ys = []
+            crossing_ns = []
 
             # get all initial headings, initial xs, peak concentrations, and heading time-series
             for crossing in crossings_dict[label]:
+
+                assert crossing.crossing_number > 0
+                if label == 'early': assert 0 < crossing.crossing_number <= MAX_CROSSINGS_EARLY
+                elif label == 'late': assert MAX_CROSSINGS_EARLY < crossing.crossing_number <= CROSSING_NUMBER_MAX
 
                 # throw away crossings that do not meet trigger criteria
                 x_0 = getattr(crossing.feature_set_basic, 'position_x_{}'.format('peak'))
@@ -280,8 +294,15 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
                 # store headings
                 headings.append(temp)
 
-            x_0s_dict[cg_id][label] = np.array(x_0s)
-            headings_dict[cg_id][label] = np.array(headings)
+                # calculate mean heading over integration window for scatter plot
+                scatter_ys.append(np.nanmean(temp[scatter_ts[0]:scatter_ts[1]]))
+                crossing_ns.append(crossing.crossing_number)
+
+            x_0s_dict[cg_id][label] = np.array(x_0s).copy()
+            headings_dict[cg_id][label] = np.array(headings).copy()
+
+            scatter_ys_dict[cg_id][label] = np.array(scatter_ys).copy()
+            crossing_ns_dict[cg_id][label] = np.array(crossing_ns).copy()
 
         x_early = x_0s_dict[cg_id]['early']
         x_late = x_0s_dict[cg_id]['late']
@@ -336,7 +357,6 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
 
 
     ## MAKE PLOTS
-
     t = np.arange(-ts_before, ts_after) * DT
 
     # history-dependence
@@ -376,6 +396,36 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
         ax_twin.set_ylabel('p-value (KS test)', fontsize=FONT_SIZE)
 
         set_fontsize(ax_twin, FONT_SIZE)
+
+    fig_1, axs_1 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
+    cc = np.concatenate
+    colors = get_n_colors(CROSSING_NUMBER_MAX, colormap='jet')
+
+    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_1.flat):
+
+        # make scatter plot of x0s vs integrated headings vs crossing number
+        x_0s_all = cc([x_0s_dict[cg_id]['early'], x_0s_dict[cg_id]['late']])
+        ys_all = cc([scatter_ys_dict[cg_id]['early'], scatter_ys_dict[cg_id]['late']])
+        cs_all = cc([crossing_ns_dict[cg_id]['early'], crossing_ns_dict[cg_id]['late']])
+
+        cs = [colors[c-1] for c in cs_all]
+
+        ax.scatter(x_0s_all, ys_all, s=20, c=cs, lw=0)
+
+        # calculate partial correlation between crossing number and heading given x
+        not_nan = ~np.isnan(ys_all)
+        r, p = stats.partial_corr(
+            cs_all[not_nan], ys_all[not_nan], controls=[x_0s_all[not_nan]])
+
+        ax.set_xlabel('x')
+        ax.set_ylabel(r'$\Delta$h_mean({}:{}) (deg)'.format(
+            *SCATTER_INTEGRATION_WINDOW))
+
+        title = CROSSING_GROUP_LABELS[cg_id] + \
+            ', R = {0:.2f}, P = {1:.3f}'.format(r, p)
+        ax.set_title(title)
+
+        set_fontsize(ax, 16)
 
     return fig_0
 
