@@ -247,8 +247,10 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
 
         # get early and late crossings
         crossings_dict = {}
-        crossings_all = session.query(models.Crossing).filter_by(crossing_group=crossing_group)
-        crossings_dict['early'] = crossings_all.filter(models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
+        crossings_all = session.query(models.Crossing).filter_by(
+            crossing_group=crossing_group)
+        crossings_dict['early'] = crossings_all.filter(
+            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
         crossings_dict['late'] = crossings_all.filter(
             models.Crossing.crossing_number > MAX_CROSSINGS_EARLY,
             models.Crossing.crossing_number <= CROSSING_NUMBER_MAX)
@@ -270,12 +272,17 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             for crossing in crossings_dict[label]:
 
                 assert crossing.crossing_number > 0
-                if label == 'early': assert 0 < crossing.crossing_number <= MAX_CROSSINGS_EARLY
-                elif label == 'late': assert MAX_CROSSINGS_EARLY < crossing.crossing_number <= CROSSING_NUMBER_MAX
+                if label == 'early':
+                    assert 0 < crossing.crossing_number <= MAX_CROSSINGS_EARLY
+                elif label == 'late':
+                    assert MAX_CROSSINGS_EARLY < crossing.crossing_number
+                    assert crossing.crossing_number <= CROSSING_NUMBER_MAX
 
                 # throw away crossings that do not meet trigger criteria
-                x_0 = getattr(crossing.feature_set_basic, 'position_x_{}'.format('peak'))
-                h_0 = getattr(crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
+                x_0 = getattr(
+                    crossing.feature_set_basic, 'position_x_{}'.format('peak'))
+                h_0 = getattr(
+                    crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
 
                 if not (X_0_MIN <= x_0 <= X_0_MAX): continue
                 if not (H_0_MIN <= h_0 <= H_0_MAX): continue
@@ -317,7 +324,8 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             'late': np.nan * np.zeros(h_late.shape),
         }
 
-        # fit heading linear prediction from x0 at each time point and subtract from original heading
+        # fit heading linear prediction from x0 at each time point
+        # and subtract from original heading
         for t_step in range(ts_before + ts_after):
 
             # get all headings for this time point
@@ -339,7 +347,8 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             residuals_dict[cg_id]['early'][:, t_step] = r_early
             residuals_dict[cg_id]['late'][:, t_step] = r_late
 
-        # loop through all time points and calculate p-value (ks-test) between early and late
+        # loop through all time points and calculate p-value (ks-test)
+        # between early and late
         p_vals = []
 
         for t_step in range(ts_before + ts_after):
@@ -372,7 +381,8 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             headings_mean = np.nanmean(residuals_dict[cg_id][label], axis=0)
             headings_sem = stats.nansem(residuals_dict[cg_id][label], axis=0)
 
-            handles.append(ax.plot(t, headings_mean, color=color, lw=2, label=label, zorder=1)[0])
+            handles.append(ax.plot(
+                t, headings_mean, color=color, lw=2, label=label, zorder=1)[0])
             ax.fill_between(
                 t, headings_mean - headings_sem, headings_mean + headings_sem,
                 color=color, alpha=ALPHA, zorder=1)
@@ -383,7 +393,8 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
         else: ax.set_ylabel('heading (deg.)')
         ax.set_title(CROSSING_GROUP_LABELS[cg_id])
 
-        if cg_id == LEGEND_CROSSING_GROUP_ID: ax.legend(handles=handles, loc='upper right')
+        if cg_id == LEGEND_CROSSING_GROUP_ID:
+            ax.legend(handles=handles, loc='upper right')
         set_fontsize(ax, FONT_SIZE)
 
         # plot p-value
@@ -408,9 +419,16 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
         ys_all = cc([scatter_ys_dict[cg_id]['early'], scatter_ys_dict[cg_id]['late']])
         cs_all = cc([crossing_ns_dict[cg_id]['early'], crossing_ns_dict[cg_id]['late']])
 
-        cs = [colors[c-1] for c in cs_all]
+        cs = np.array([colors[c-1] for c in cs_all])
 
-        ax.scatter(x_0s_all, ys_all, s=20, c=cs, lw=0)
+        hs = []
+
+        for c in sorted(np.unique(cs_all)):
+            label = 'cn = {}'.format(c)
+            mask = cs_all == c
+            h = ax.scatter(x_0s_all[mask], ys_all[mask],
+                s=20, c=cs[mask], lw=0, label=label)
+            hs.append(h)
 
         # calculate partial correlation between crossing number and heading given x
         not_nan = ~np.isnan(ys_all)
@@ -425,6 +443,7 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             ', R = {0:.2f}, P = {1:.3f}'.format(r, p)
         ax.set_title(title)
 
+        ax.legend(handles=hs, loc='upper center', ncol=3)
         set_fontsize(ax, 16)
 
     return fig_0
