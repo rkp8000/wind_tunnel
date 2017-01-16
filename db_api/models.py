@@ -339,6 +339,10 @@ class Crossing(Base):
     trajectory = relationship("Trajectory", backref='crossings')
     crossing_group = relationship("CrossingGroup", backref='crossings')
 
+    @property
+    def duration(self):
+        return (self.exit_timepoint_id - self.entry_timepoint_id) / 100
+
     def timepoint_field(self, session, field, first, last, first_rel_to, last_rel_to, nan_pad=False):
         """
         Get a column of timepoints for a specified time.
