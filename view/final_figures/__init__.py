@@ -396,6 +396,8 @@ def heading_concentration_dependence(
 
         handle = axs[0].plot(
             t, data[cg_id]['partial_corrs'], color=color, lw=2, ls='-', label=label)[0]
+        axs[0].fill_between(
+            t, data[cg_id]['lbs'], data[cg_id]['ubs'], color=color, alpha=0.2)
 
         handles.append(handle)
 
