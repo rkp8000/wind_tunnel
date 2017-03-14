@@ -445,7 +445,6 @@ class SurgingAgent(object):
 
             # add new surge force if hit has occurred
             if hit:
-                print('hit')
                 # compute alpha function starting at current time point
                 # and add it to surges array
                 ts_ = ts[t_ctr:] - ts[t_ctr]
