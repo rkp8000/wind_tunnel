@@ -10,19 +10,20 @@ from db_api.connect import session
 
 from kinematics import heading, angular_velocity
 from plot import set_font_size
-from simple_tracking import GaussianLaminarPlume, CenterlineInferringAgent
+from simple_tracking import GaussianLaminarPlume
+from simple_tracking import CenterlineInferringAgent, SurgingAgent
 from stats import nansem
 from time_series import segment_by_threshold
 
 
-def example_trajectory_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
+def example_trajectory_centerline_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
     """
     Create an example trajectory and plot some of the resulting covariates.
     """
 
     # build plume and agent
 
-    pl = GaussianLaminarPlume(0, np.array([0., 0]), np.eye(2))
+    pl = GaussianLaminarPlume(0, np.array([0., 0]), [1., 1.])
     ag = CenterlineInferringAgent(
         tau=TAU, noise=NOISE, bias=BIAS, threshold=np.inf,
         hit_trigger='peak', hit_influence=0,
@@ -82,7 +83,7 @@ def example_trajectory_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
     return fig
 
 
-def example_trajectory_with_plume(
+def example_trajectory_centerline_with_plume(
         SEED, DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, HIT_INFLUENCE,
         TAU_MEMORY, K_0, K_S, BOUNDS,
         PL_CONC, PL_MEAN, PL_STD):
@@ -178,6 +179,156 @@ def example_trajectory_with_plume(
         set_font_size(ax, 16)
 
     return fig
+
+
+def example_trajectory_surging_no_plume(
+        SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
+    """
+    Create an example trajectory and plot some of the resulting covariates.
+    """
+
+    # build plume and agent
+
+    pl = GaussianLaminarPlume(0, np.array([0., 0]), [1., 1.])
+    ag = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=np.inf,
+        hit_trigger='peak', surge_strength=0, tau_surge=0, bounds=BOUNDS)
+
+    # generate the trajectory
+
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    # plot trajectory
+
+    fig = plt.figure(figsize=(15, 10), tight_layout=True)
+    axs = []
+
+    axs.append(fig.add_subplot(2, 1, 1))
+
+    axs[0].plot(traj['xs'][:, 0], traj['xs'][:, 1], lw=2, color='k', zorder=0)
+    axs[0].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[0].set_xlim(*BOUNDS[0])
+    axs[0].set_ylim(*BOUNDS[1])
+
+    axs[0].set_xlabel('x (m)')
+    axs[0].set_ylabel('y (m)')
+
+    axs[0].set_title('example trajectory')
+
+    # plot some histograms
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+
+    axs.append(fig.add_subplot(2, 2, 3))
+    axs.append(fig.add_subplot(2, 2, 4))
+
+    axs[1].hist(speeds, bins=30, lw=0, normed=True)
+    axs[2].hist(ws, bins=30, lw=0, normed=True)
+
+    axs[1].set_xlabel('speed (m/s)')
+    axs[2].set_xlabel('ang. vel (rad/s)')
+
+    axs[1].set_ylabel('relative counts')
+
+    for ax in axs:
+
+        set_font_size(ax, 16)
+
+    return fig
+
+
+def example_trajectory_surging_with_plume(
+        SEED, DURATION, DT, TAU, NOISE, BIAS, THRESHOLD,
+        SURGE_AMP, TAU_SURGE, BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD):
+    """
+    Create an example trajectory and plot some of the resulting covariates.
+    """
+
+    # build plume and agent
+
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    ag = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD, hit_trigger='peak',
+        surge_amp=SURGE_AMP, tau_surge=TAU_SURGE, bounds=BOUNDS)
+
+    # generate the trajectory
+
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    # plot trajectory
+
+    fig = plt.figure(figsize=(15, 10), tight_layout=True)
+    axs = [fig.add_subplot(3, 1, 1)]
+
+    axs[-1].plot(traj['xs'][:, 0], traj['xs'][:, 1], lw=2, color='k', zorder=0)
+    axs[-1].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[-1].set_xlim(*BOUNDS[0])
+    axs[-1].set_ylim(*BOUNDS[1])
+
+    axs[-1].set_xlabel('x (m)')
+    axs[-1].set_ylabel('y (m)')
+
+    axs[-1].set_title('example trajectory')
+
+    # plot some histograms
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+
+    axs.append(fig.add_subplot(3, 2, 3))
+    axs.append(fig.add_subplot(3, 2, 4))
+
+    axs[-2].hist(speeds, bins=30, lw=0, normed=True)
+    axs[-1].hist(ws, bins=30, lw=0, normed=True)
+
+    axs[-2].set_xlabel('speed (m/s)')
+    axs[-1].set_xlabel('ang. vel (rad/s)')
+
+    axs[-2].set_ylabel('relative counts')
+
+    axs.append(fig.add_subplot(3, 1, 3))
+    axs.append(axs[-1].twinx())
+
+    ts = traj['ts']
+    odors = traj['odors']
+    surge_forces = traj['surges']
+
+    axs[-2].plot(ts, odors, color='r', lw=2)
+    axs[-1].plot(ts, surge_forces, color='k', lw=2)
+
+    axs[-2].set_xlabel('time (s)')
+    axs[-2].set_ylabel('odor', color='red')
+    axs[-1].set_ylabel('surge forces')
+
+    for ax in axs:
+
+        set_font_size(ax, 16)
+
+    return fig
+
 
 
 def optimize_model_params(
