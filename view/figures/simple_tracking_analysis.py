@@ -657,7 +657,7 @@ def crossing_triggered_headings_all(
     return fig
 
 
-def crossing_triggered_headings_early_late(
+def crossing_triggered_headings_early_late_centerline(
         SEED, N_TRAJS, DURATION, DT,
         TAU, NOISE, BIAS, AGENT_THRESHOLD,
         HIT_INFLUENCE, TAU_MEMORY,
@@ -684,6 +684,209 @@ def crossing_triggered_headings_early_late(
         tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
         hit_trigger='peak', hit_influence=HIT_INFLUENCE,
         k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
+
+    # GENERATE TRAJECTORIES
+
+    np.random.seed(SEED)
+
+    trajs = []
+
+    for _ in range(N_TRAJS):
+
+        # choose random start position
+
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
+
+        # make trajectory
+
+        traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
+
+        traj['headings'] = heading(traj['vs'])[:, 2]
+
+        trajs.append(traj)
+
+    # ANALYZE TRAJECTORIES
+
+    n_crossings = []
+
+    # collect early and late crossings
+
+    crossings_early = []
+    crossings_late = []
+
+    ts_before = int(T_BEFORE / DT)
+    ts_after = int(T_AFTER / DT)
+
+    for traj in trajs:
+
+        starts, onsets, peak_times, offsets, ends = \
+            segment_by_threshold(traj['odors'], ANALYSIS_THRESHOLD)[0].T
+
+        n_crossings.append(len(peak_times))
+
+        for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+
+            if not (H_MIN_PEAK <= traj['headings'][peak_time] < H_MAX_PEAK):
+
+                continue
+
+            if not (X_MIN_PEAK <= traj['xs'][peak_time, 0] < X_MAX_PEAK):
+
+                continue
+
+            crossing = np.nan * np.zeros((ts_before + ts_after,))
+
+            ts_before_crossing = peak_time - start
+            ts_after_crossing = end - peak_time
+
+            if ts_before_crossing >= ts_before:
+
+                crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+
+            else:
+
+                crossing[ts_before - ts_before_crossing:ts_before] = \
+                    traj['headings'][start:peak_time]
+
+            if ts_after_crossing >= ts_after:
+
+                crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+
+            else:
+
+                crossing[ts_before:ts_before + ts_after_crossing] = \
+                    traj['headings'][peak_time:end]
+
+            if SUBTRACT_PEAK_HEADING:
+
+                crossing -= crossing[ts_before]
+
+            if ctr < EARLY_LESS_THAN:
+
+                crossings_early.append(crossing)
+
+            else:
+
+                crossings_late.append(crossing)
+
+    n_crossings = np.array(n_crossings)
+
+    crossings_early = np.array(crossings_early)
+    crossings_late = np.array(crossings_late)
+
+    t = np.arange(-ts_before, ts_after) * DT
+
+    h_mean_early = np.nanmean(crossings_early, axis=0)
+    h_sem_early = nansem(crossings_early, axis=0)
+
+    h_mean_late = np.nanmean(crossings_late, axis=0)
+    h_sem_late = nansem(crossings_late, axis=0)
+
+    fig, axs = plt.figure(figsize=(15, 15), tight_layout=True), []
+
+    axs.append(fig.add_subplot(3, 2, 1))
+    axs.append(fig.add_subplot(3, 2, 2))
+
+    handles = []
+
+    try:
+
+        handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
+        axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
+            color='b', alpha=0.2)
+
+    except:
+
+        pass
+
+    try:
+
+        handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
+        axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
+            color='g', alpha=0.2)
+
+    except:
+
+        pass
+
+    axs[0].axvline(0, ls='--', color='gray')
+
+    axs[0].set_xlabel('time since peak (s)')
+
+    if SUBTRACT_PEAK_HEADING:
+
+        axs[0].set_ylabel('change in heading (deg)')
+
+    else:
+
+        axs[0].set_ylabel('heading (deg)')
+
+    axs[0].legend(handles=handles, fontsize=16)
+
+    bin_min = -0.5
+    bin_max = n_crossings.max() + 0.5
+
+    bins = np.linspace(bin_min, bin_max, bin_max - bin_min + 1, endpoint=True)
+
+    axs[1].hist(n_crossings, bins=bins, lw=0, normed=True)
+    axs[1].set_xlim(bin_min, bin_max)
+
+    axs[1].set_xlabel('number of crossings')
+    axs[1].set_ylabel('proportion of trajectories')
+
+    axs.append(fig.add_subplot(3, 1, 2))
+
+    axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
+    axs[2].axhline(0, color='gray', ls='--')
+
+    axs[2].set_xlabel('x (m)')
+    axs[2].set_ylabel('y (m)')
+
+    axs.append(fig.add_subplot(3, 1, 3))
+
+    all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
+    x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
+    y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
+
+    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
+
+    for ax in axs:
+
+        set_font_size(ax, 20)
+
+    return fig
+
+
+def crossing_triggered_headings_early_late_surge(
+        SEED, N_TRAJS, DURATION, DT, BOUNDS,
+        TAU, NOISE, BIAS, AGENT_THRESHOLD,
+        SURGE_AMP, TAU_SURGE,
+        PL_CONC, PL_MEAN, PL_STD,
+        ANALYSIS_THRESHOLD,
+        H_MIN_PEAK, H_MAX_PEAK,
+        X_MIN_PEAK, X_MAX_PEAK,
+        EARLY_LESS_THAN,
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER):
+    """
+    Fly several agents through a simulated plume and plot their plume-crossing-triggered
+    headings.
+    """
+
+    # build plume and agent
+
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    ag = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
+        hit_trigger='peak', surge_amp=SURGE_AMP, tau_surge=TAU_SURGE,
+        bounds=BOUNDS)
 
     # GENERATE TRAJECTORIES
 
