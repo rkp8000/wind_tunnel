@@ -10,6 +10,27 @@ import stats
 cc = np.concatenate
 
 
+def _get_ks_p_vals(x_0s, x_1s):
+    """
+    Calculate the KS-p-value for each time point across two sets of
+    time-series.
+    :return:
+    """
+    p_vals = []
+
+    for col in range(x_0s.shape[1]):
+
+        x_0_with_nans = x_0s[:, col]
+        x_1_with_nans = x_1s[:, col]
+
+        x_0s_no_nans = x_0_with_nans[~np.isnan(x_0_with_nans)]
+        x_1s_no_nans = x_1_with_nans[~np.isnan(x_1_with_nans)]
+
+        p_vals.append(ks_2samp(x_0s_no_nans, x_1s_no_nans)[1])
+
+    return np.array(p_vals)
+
+
 class Munger(object):
     """
     Class for dealing with time-series data and converting into nice toeplitzy matrices
