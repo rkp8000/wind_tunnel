@@ -10,7 +10,7 @@ import stats
 cc = np.concatenate
 
 
-def _get_ks_p_vals(x_0s, x_1s):
+def get_ks_p_vals(x_0s, x_1s):
     """
     Calculate the KS-p-value for each time point across two sets of
     time-series.
