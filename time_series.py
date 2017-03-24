@@ -5,6 +5,7 @@ from __future__ import print_function, division
 import numpy as np
 from scipy import linalg
 import stats
+from scipy.stats import ks_2samp
 
 
 cc = np.concatenate
