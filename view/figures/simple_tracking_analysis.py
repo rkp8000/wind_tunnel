@@ -13,7 +13,7 @@ from plot import set_font_size
 from simple_tracking import GaussianLaminarPlume
 from simple_tracking import CenterlineInferringAgent, SurgingAgent
 from stats import nansem
-from time_series import segment_by_threshold
+from time_series import get_ks_p_vals, segment_by_threshold
 
 
 def example_trajectory_centerline_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS, BOUNDS):
@@ -22,7 +22,6 @@ def example_trajectory_centerline_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS,
     """
 
     # build plume and agent
-
     pl = GaussianLaminarPlume(0, np.array([0., 0]), [1., 1.])
     ag = CenterlineInferringAgent(
         tau=TAU, noise=NOISE, bias=BIAS, threshold=np.inf,
@@ -30,7 +29,6 @@ def example_trajectory_centerline_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS,
         k_0=np.eye(2), k_s=np.eye(2), tau_memory=1, bounds=BOUNDS)
 
     # generate the trajectory
-
     np.random.seed(SEED)
 
     start_pos = np.array([
@@ -77,7 +75,6 @@ def example_trajectory_centerline_no_plume(SEED, DURATION, DT, TAU, NOISE, BIAS,
     axs[1].set_ylabel('relative counts')
 
     for ax in axs:
-
         set_font_size(ax, 16)
 
     return fig
@@ -779,6 +776,7 @@ def crossing_triggered_headings_early_late_centerline(
     crossings_late = np.array(crossings_late)
 
     t = np.arange(-ts_before, ts_after) * DT
+    p_vals = get_ks_p_vals(crossings_early, crossings_late)
 
     h_mean_early = np.nanmean(crossings_early, axis=0)
     h_sem_early = nansem(crossings_early, axis=0)
@@ -813,9 +811,26 @@ def crossing_triggered_headings_early_late_centerline(
 
         pass
 
-    axs[0].axvline(0, ls='--', color='gray')
-
     axs[0].set_xlabel('time since peak (s)')
+
+    ## get y-position to plot p-vals at
+    y_min, y_max = axs[0].get_ylim()
+    y_range = y_max - y_min
+
+    y_p_vals = (y_min + 0.02*y_range) * np.ones(len(p_vals))
+    y_p_vals_10 = y_p_vals.copy()
+    y_p_vals_05 = y_p_vals.copy()
+    y_p_vals_01 = y_p_vals.copy()
+    y_p_vals_10[p_vals > 0.1] = np.nan
+    y_p_vals_05[p_vals > 0.05] = np.nan
+    y_p_vals_01[p_vals > 0.01] = np.nan
+
+    axs[0].plot(t, y_p_vals_10, lw=4, color='gray')
+    axs[0].plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
+    axs[0].plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
+
+    print('min p-value = {}'.format(np.nanmin(p_vals)))
+
 
     if SUBTRACT_PEAK_HEADING:
 
@@ -825,7 +840,7 @@ def crossing_triggered_headings_early_late_centerline(
 
         axs[0].set_ylabel('heading (deg)')
 
-    axs[0].legend(handles=handles, fontsize=16)
+    # axs[0].legend(handles=handles, fontsize=16)
 
     bin_min = -0.5
     bin_max = n_crossings.max() + 0.5
@@ -880,7 +895,6 @@ def crossing_triggered_headings_early_late_surge(
     """
 
     # build plume and agent
-
     pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
 
     ag = SurgingAgent(
@@ -889,7 +903,6 @@ def crossing_triggered_headings_early_late_surge(
         bounds=BOUNDS)
 
     # GENERATE TRAJECTORIES
-
     np.random.seed(SEED)
 
     trajs = []
@@ -897,7 +910,6 @@ def crossing_triggered_headings_early_late_surge(
     for _ in range(N_TRAJS):
 
         # choose random start position
-
         start_pos = np.array([
             np.random.uniform(*BOUNDS[0]),
             np.random.uniform(*BOUNDS[1]),
@@ -905,19 +917,14 @@ def crossing_triggered_headings_early_late_surge(
         ])
 
         # make trajectory
-
         traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
-
         traj['headings'] = heading(traj['vs'])[:, 2]
-
         trajs.append(traj)
 
     # ANALYZE TRAJECTORIES
-
     n_crossings = []
 
     # collect early and late crossings
-
     crossings_early = []
     crossings_late = []
 
@@ -933,12 +940,10 @@ def crossing_triggered_headings_early_late_surge(
 
         for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
 
+            # skip crossings that don't meet inclusion criteria
             if not (H_MIN_PEAK <= traj['headings'][peak_time] < H_MAX_PEAK):
-
                 continue
-
             if not (X_MIN_PEAK <= traj['xs'][peak_time, 0] < X_MAX_PEAK):
-
                 continue
 
             crossing = np.nan * np.zeros((ts_before + ts_after,))
@@ -947,33 +952,22 @@ def crossing_triggered_headings_early_late_surge(
             ts_after_crossing = end - peak_time
 
             if ts_before_crossing >= ts_before:
-
                 crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
-
             else:
-
                 crossing[ts_before - ts_before_crossing:ts_before] = \
                     traj['headings'][start:peak_time]
 
             if ts_after_crossing >= ts_after:
-
                 crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
-
             else:
-
                 crossing[ts_before:ts_before + ts_after_crossing] = \
                     traj['headings'][peak_time:end]
 
             if SUBTRACT_PEAK_HEADING:
-
                 crossing -= crossing[ts_before]
-
             if ctr < EARLY_LESS_THAN:
-
                 crossings_early.append(crossing)
-
             else:
-
                 crossings_late.append(crossing)
 
     n_crossings = np.array(n_crossings)
@@ -982,6 +976,8 @@ def crossing_triggered_headings_early_late_surge(
     crossings_late = np.array(crossings_late)
 
     t = np.arange(-ts_before, ts_after) * DT
+
+    p_vals = get_ks_p_vals(crossings_early, crossings_late)
 
     h_mean_early = np.nanmean(crossings_early, axis=0)
     h_sem_early = nansem(crossings_early, axis=0)
@@ -997,35 +993,42 @@ def crossing_triggered_headings_early_late_surge(
     handles = []
 
     try:
-
         handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
         axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
             color='b', alpha=0.2)
-
     except:
-
         pass
 
     try:
-
         handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
         axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
             color='g', alpha=0.2)
-
     except:
-
         pass
 
-    axs[0].axvline(0, ls='--', color='gray')
+    # axs[0].axvline(0, ls='--', color='gray')
+
+    ## get y-position to plot p-vals at
+    y_min, y_max = axs[0].get_ylim()
+    y_range = y_max - y_min
+
+    y_p_vals = (y_min + 0.02*y_range) * np.ones(len(p_vals))
+    y_p_vals_10 = y_p_vals.copy()
+    y_p_vals_05 = y_p_vals.copy()
+    y_p_vals_01 = y_p_vals.copy()
+    y_p_vals_10[p_vals > 0.1] = np.nan
+    y_p_vals_05[p_vals > 0.05] = np.nan
+    y_p_vals_01[p_vals > 0.01] = np.nan
+
+    axs[0].plot(t, y_p_vals_10, lw=4, color='gray')
+    axs[0].plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
+    axs[0].plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
 
     axs[0].set_xlabel('time since peak (s)')
 
     if SUBTRACT_PEAK_HEADING:
-
         axs[0].set_ylabel('change in heading (deg)')
-
     else:
-
         axs[0].set_ylabel('heading (deg)')
 
     axs[0].legend(handles=handles, fontsize=16)
