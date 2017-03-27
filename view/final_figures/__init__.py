@@ -942,9 +942,10 @@ def infotaxis_wind_speed_dependence(
 
 
 def example_trajs_real_and_models(
-        EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
+        EXPT_ID, TRAJ_NUMBER, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
         DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
         HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
+        SEED_SURGE, SEED_CENTERLINE,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
         EXPT_LABEL, FONT_SIZE):
     """
@@ -964,18 +965,27 @@ def example_trajs_real_and_models(
         traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
 
     # get plottable quantities for real trajectory
-    xs, ys, zs = traj.positions(session).T[:, TRAJ_START_TP:TRAJ_END_TP]
-    cs = traj.odors(session)[TRAJ_START_TP:TRAJ_END_TP]
+    xs, ys, zs = traj.positions(session).T[:, :TRAJ_END_TP]
+    cs = traj.odors(session)[:TRAJ_END_TP]
 
     traj_dict_real = {'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
 
-    # get corresponding infotaxis trajectory
+    # generate surge-cast trajectory
+    np.random.seed(SEED_SURGE)
+    traj_dict_surge = {}
+
+    # generate centerline-inferring trajectory
+    np.random.seed(SEED_CENTERLINE)
+    traj_dict_centerline = {}
+
+    # get infotaxis trajectory corresponding to real trajectory
     real_trajectory_id = traj.id
     # get geometric configuration corresponding to this real trajectory
     gcert = session_infotaxis.query(
         models_infotaxis.GeomConfigExtensionRealTrajectory).filter_by(
         real_trajectory_id=real_trajectory_id).first()
     gc = gcert.geom_config
+    end_tp_info = int(TRAJ_END_TP * DT / gcert.avg_dt)
 
     trial = session_infotaxis.query(models_infotaxis.Trial).filter(
         models_infotaxis.Trial.simulation_id == INFOTAXIS_SIMULATION_ID,
@@ -985,6 +995,11 @@ def example_trajs_real_and_models(
     y_idxs = trial.timepoint_field(session_infotaxis, 'yidx')
     z_idxs = trial.timepoint_field(session_infotaxis, 'zidx')
     cs_infotaxis = trial.timepoint_field(session_infotaxis, 'odor')
+
+    x_idxs = x_idxs[:end_tp_info]
+    y_idxs = y_idxs[:end_tp_info]
+    z_idxs = z_idxs[:end_tp_info]
+    cs_infotaxis = cs_infotaxis[:end_tp_info]
 
     # convert to positions
     sim = trial.simulation
@@ -1056,10 +1071,15 @@ def example_trajs_real_and_models(
         zs_ = traj_dict['zs']
         cs_ = traj_dict['cs']
 
+        # show trajectory
         ax.plot(xs_, ys_, zs_, color='k', lw=3, zorder=1)
+        # overlay concentrations
         ax.scatter(
             xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2,
             cmap=cmx.hot, lw=0, alpha=1, zorder=2)
+        # mark start
+        ax.scatter(
+            xs_[0], ys_[0], zs_[0], s=400, marker='*', lw=0, c='g', zorder=3)
 
         ax.set_xlim(-0.3, 1)
         ax.set_ylim(-0.15, 0.15)
