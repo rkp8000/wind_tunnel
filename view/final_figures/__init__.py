@@ -21,21 +21,12 @@ from experimental_constants import DT, PLUME_PARAMS_DICT
 
 
 def example_traj_and_crossings(
-        SEED,
-        EXPT_ID,
-        TRAJ_NUMBER,
-        TRAJ_START_TP, TRAJ_END_TP,
-        CROSSING_GROUP,
-        N_CROSSINGS,
-        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        MIN_PEAK_CONC,
-        TS_BEFORE_3D, TS_AFTER_3D,
-        TS_BEFORE_HEADING, TS_AFTER_HEADING,
-        FIG_SIZE,
-        SCATTER_SIZE,
-        CYL_STDS, CYL_COLOR, CYL_ALPHA,
-        EXPT_LABEL,
-        FONT_SIZE):
+        SEED, EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP,
+        CROSSING_GROUP, N_CROSSINGS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, MIN_PEAK_CONC,
+        TS_BEFORE_3D, TS_AFTER_3D, TS_BEFORE_HEADING, TS_AFTER_HEADING,
+        FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
+        EXPT_LABEL, FONT_SIZE):
     """
     Show an example trajectory through a wind tunnel plume with the crossings marked.
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
@@ -950,8 +941,8 @@ def infotaxis_wind_speed_dependence(
     return fig
 
 
-def example_trajs_with_models(
-        SEED, EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP,
+def example_trajs_real_and_models(
+        EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
         DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
         HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
@@ -973,123 +964,118 @@ def example_trajs_with_models(
         traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
 
     # get plottable quantities for real trajectory
-    x_traj, y_traj, z_traj = traj.positions(session).T[:, TRAJ_START_TP:TRAJ_END_TP]
-    c_traj = traj.odors(session)[TRAJ_START_TP:TRAJ_END_TP]
+    xs, ys, zs = traj.positions(session).T[:, TRAJ_START_TP:TRAJ_END_TP]
+    cs = traj.odors(session)[TRAJ_START_TP:TRAJ_END_TP]
+
+    traj_dict_real = {'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
 
     # get corresponding infotaxis trajectory
+    real_trajectory_id = traj.id
+    # get geometric configuration corresponding to this real trajectory
+    gcert = session_infotaxis.query(
+        models_infotaxis.GeomConfigExtensionRealTrajectory).filter_by(
+        real_trajectory_id=real_trajectory_id).first()
+    gc = gcert.geom_config
+
+    trial = session_infotaxis.query(models_infotaxis.Trial).filter(
+        models_infotaxis.Trial.simulation_id == INFOTAXIS_SIMULATION_ID,
+        models_infotaxis.Trial.geom_config_id == gc.id).first()
+
+    x_idxs = trial.timepoint_field(session_infotaxis, 'xidx')
+    y_idxs = trial.timepoint_field(session_infotaxis, 'yidx')
+    z_idxs = trial.timepoint_field(session_infotaxis, 'zidx')
+    cs_infotaxis = trial.timepoint_field(session_infotaxis, 'odor')
+
+    # convert to positions
+    sim = trial.simulation
+    env = sim.env
+
+    xs_infotaxis = []
+    ys_infotaxis = []
+    zs_infotaxis = []
+
+    for x_idx, y_idx, z_idx in zip(x_idxs, y_idxs, z_idxs):
+        x, y, z = env.pos_from_idx([x_idx, y_idx, z_idx])
+        xs_infotaxis.append(x)
+        ys_infotaxis.append(y)
+        zs_infotaxis.append(z)
+
+    xs_infotaxis = np.array(xs_infotaxis)
+    ys_infotaxis = np.array(ys_infotaxis)
+    zs_infotaxis = np.array(zs_infotaxis)
+
+    traj_dict_infotaxis = {
+        'xs': xs_infotaxis,
+        'ys': ys_infotaxis,
+        'zs': zs_infotaxis,
+        'cs': cs_infotaxis,
+    }
 
     ## MAKE PLOTS
-    fig, axs = plt.subplots(4, 1, figsize=FIG_SIZE, tight_layout=True)
+    fig = plt.figure(figsize=FIG_SIZE, tight_layout=True)
+    axs = [fig.add_subplot(4, 1, ctr+1, projection='3d') for ctr in range(4)]
 
-    #  plot example trajectory
-    axs.append(fig.add_subplot(3, 1, 1, projection='3d'))
+    # plot all trajectories
+    traj_dicts = [traj_dict_real, traj_dict_infotaxis]
 
-    # overlay plume cylinder
-    CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
-    CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
+    for traj_dict, ax in zip(traj_dicts, axs):
 
-    CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
-    CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
+        # overlay plume cylinder
+        CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
+        CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
 
-    MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
+        CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
+        CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
 
-    y = np.linspace(-1, 1, 100, endpoint=True)
-    x = np.linspace(-0.3, 1, 5, endpoint=True)
-    yy, xx = np.meshgrid(y, x)
-    zz = np.sqrt(1 - yy ** 2)
+        MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
 
-    yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
-    zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
-    zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
-    rstride = 20
-    cstride = 10
+        y = np.linspace(-1, 1, 100, endpoint=True)
+        x = np.linspace(-0.3, 1, 5, endpoint=True)
+        yy, xx = np.meshgrid(y, x)
+        zz = np.sqrt(1 - yy ** 2)
 
-    axs[0].plot_surface(
-        xx, yy, zz_top, lw=0,
-        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+        yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
+        zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
+        zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
+        rstride = 20
+        cstride = 10
 
-    axs[0].plot_surface(
-        xx, yy, zz_bottom, lw=0,
-        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
+        ax.plot_surface(
+            xx, yy, zz_top, lw=0,
+            color=CYL_COLOR, alpha=CYL_ALPHA,
+            rstride=rstride, cstride=cstride)
 
-    axs[0].scatter(
-        x_traj, y_traj, z_traj, c=c_traj, s=SCATTER_SIZE,
-        vmin=0, vmax=MAX_CONC/2, cmap=cmx.hot, lw=0, alpha=1)
+        ax.plot_surface(
+            xx, yy, zz_bottom, lw=0,
+            color=CYL_COLOR, alpha=CYL_ALPHA,
+            rstride=rstride, cstride=cstride)
 
-    axs[0].set_xlim(-0.3, 1)
-    axs[0].set_ylim(-0.15, 0.15)
-    axs[0].set_zlim(-0.15, 0.15)
+        # plot trajectory
+        xs_ = traj_dict['xs']
+        ys_ = traj_dict['ys']
+        zs_ = traj_dict['zs']
+        cs_ = traj_dict['cs']
 
-    axs[0].set_xticks([-0.3, 1.])
-    axs[0].set_yticks([-0.15, 0.15])
-    axs[0].set_zticks([-0.15, 0.15])
+        ax.plot(xs_, ys_, zs_, color='k', lw=3, zorder=1)
+        ax.scatter(
+            xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2,
+            cmap=cmx.hot, lw=0, alpha=1, zorder=2)
 
-    axs[0].set_xticklabels([-30, 100])
-    axs[0].set_yticklabels([-15, 15])
-    axs[0].set_zticklabels([-15, 15])
+        ax.set_xlim(-0.3, 1)
+        ax.set_ylim(-0.15, 0.15)
+        ax.set_zlim(-0.15, 0.15)
 
-    axs[0].set_xlabel('x (cm)')
-    axs[0].set_ylabel('y (cm)')
-    axs[0].set_zlabel('z (cm)')
+        ax.set_xticks([-0.3, 1.])
+        ax.set_yticks([-0.15, 0.15])
+        ax.set_zticks([-0.15, 0.15])
 
-    # plot several crossings
-    axs.append(fig.add_subplot(3, 1, 2, projection='3d'))
+        ax.set_xticklabels([-30, 100])
+        ax.set_yticklabels([-15, 15])
+        ax.set_zticklabels([-15, 15])
 
-    # overlay plume cylinder
-    axs[1].plot_surface(
-        xx, yy, zz_top, lw=0,
-        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
-
-    axs[1].plot_surface(
-        xx, yy, zz_bottom, lw=0,
-        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
-
-    # plot crossings
-    for crossing in crossing_examples:
-
-        axs[1].scatter(
-            crossing['position_x'], crossing['position_y'], crossing['position_z'],
-            c=crossing['odor'], s=SCATTER_SIZE,
-            vmin=0, vmax=MAX_CONC / 2, cmap=cmx.hot, lw=0, alpha=1)
-
-    axs[1].set_xlim(-0.3, 1)
-    axs[1].set_ylim(-0.15, 0.15)
-    axs[1].set_zlim(-0.15, 0.15)
-
-    axs[1].set_xticks([-0.3, 1.])
-    axs[1].set_yticks([-0.15, 0.15])
-    axs[1].set_zticks([-0.15, 0.15])
-
-    axs[1].set_xticklabels([-30, 100])
-    axs[1].set_yticklabels([-15, 15])
-    axs[1].set_zticklabels([-15, 15])
-
-    axs[1].set_xlabel('x (cm)')
-    axs[1].set_ylabel('y (cm)')
-    axs[1].set_zlabel('z (cm)')
-
-    # plot headings
-    axs.append(fig.add_subplot(3, 2, 6))
-
-    t = np.arange(-TS_BEFORE_HEADING, TS_AFTER_HEADING) * DT
-    headings_mean = np.nanmean(headings, axis=0)
-    headings_std = np.nanstd(headings, axis=0)
-    headings_sem = stats.nansem(headings, axis=0)
-
-    # plot example crossings
-    for crossing in crossing_examples:
-        axs[2].plot(t, crossing['heading'], lw=1, color='k', alpha=0.5, zorder=-1)
-
-    # plot mean, sem, and std
-    axs[2].plot(t, headings_mean, lw=3, color='k', zorder=1)
-    axs[2].plot(t, headings_mean - headings_std, lw=3, ls='--', color='k', zorder=1)
-    axs[2].plot(t, headings_mean + headings_std, lw=3, ls='--', color='k', zorder=1)
-    axs[2].fill_between(
-        t, headings_mean - headings_sem, headings_mean + headings_sem,
-        color='k', alpha=0.2)
-
-    axs[2].set_xlabel('time since crossing (s)')
-    axs[2].set_ylabel('heading (degrees)')
+        ax.set_xlabel('x (cm)')
+        ax.set_ylabel('y (cm)')
+        ax.set_zlabel('z (cm)')
 
     for ax in axs:
         set_fontsize(ax, FONT_SIZE)
