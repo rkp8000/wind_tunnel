@@ -620,9 +620,6 @@ def infotaxis_history_dependence(
     from db_api.infotaxis import models as models_infotaxis
     from db_api.infotaxis.connect import session as session_infotaxis
 
-    ts_before_expt = int(round(T_BEFORE_EXPT / DT))
-    ts_after_expt = int(round(T_AFTER_EXPT / DT))
-
     # get headings from infotaxis plume crossings
     headings = {}
     headings['it_hist_dependence'] = {}
@@ -725,7 +722,9 @@ def infotaxis_history_dependence(
         ax.plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
         ax.plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
 
-        ax.legend(handles=[handle_early, handle_late])
+        print('min p-value = {}'.format(np.nanmin(p_vals)))
+
+        # ax.legend(handles=[handle_early, handle_late])
 
         ax.set_ylabel('$\Delta$ heading (degrees)')
 
@@ -736,11 +735,6 @@ def infotaxis_history_dependence(
 
 
 def infotaxis_position_distribution(
-        WIND_TUNNEL_CG_IDS, INFOTAXIS_WIND_SPEED_CG_IDS, MAX_CROSSINGS,
-        INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
-        MAX_CROSSINGS_EARLY, X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        X_0_MIN_SIM, X_0_MAX_SIM, X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
-        T_BEFORE_EXPT, T_AFTER_EXPT, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
         HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
         FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
     """
@@ -771,12 +765,10 @@ def infotaxis_position_distribution(
     sim_ys = []
 
     for traj in trajs_expt:
-
         expt_xs.append(traj.timepoint_field(session, 'position_x'))
         expt_ys.append(traj.timepoint_field(session, 'position_y'))
 
     for trial in trials_sim:
-
         sim_xs.append(trial.timepoint_field(session_infotaxis, 'xidx'))
         sim_ys.append(trial.timepoint_field(session_infotaxis, 'yidx'))
 
@@ -787,125 +779,21 @@ def infotaxis_position_distribution(
     sim_ys = np.concatenate(sim_ys) * 0.02 - 0.15
 
     ## MAKE PLOTS
-    fig, axs = plt.figure(figsize=FIG_SIZE, tight_layout=True), []
-
-    axs.append(fig.add_subplot(4, 3, 1))
-    axs.append(fig.add_subplot(4, 3, 2, sharey=axs[0]))
-
-    # plot wind-speed dependence of wind tunnel trajectories
-
-    t = np.arange(-ts_before_expt, ts_after_expt) * DT
-
-    handles = []
-
-    for cg_id in WIND_TUNNEL_CG_IDS:
-
-        label = EXPT_LABELS[cg_id]
-        color = EXPT_COLORS[cg_id]
-
-        headings_mean = np.nanmean(headings['wind_tunnel'][cg_id], axis=0)
-        headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
-
-        # plot mean and sem
-
-        handles.append(
-            axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
-        axs[0].fill_between(
-            t, headings_mean - headings_sem, headings_mean + headings_sem,
-            color=color, alpha=0.2)
-
-    axs[0].set_xlabel('time since odor peak (s)')
-    axs[0].set_ylabel('$\Delta$ heading (degrees)')
-    axs[0].set_title('experimental data\n(wind speed comparison)')
-
-    axs[0].legend(handles=handles, loc='best')
-
-    t = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM)
-
-    for cg_id, wt_cg_id in zip(INFOTAXIS_WIND_SPEED_CG_IDS, WIND_TUNNEL_CG_IDS):
-
-        label = EXPT_LABELS[wt_cg_id]
-        color = EXPT_COLORS[wt_cg_id]
-
-        headings_mean = np.nanmean(headings['infotaxis'][cg_id], axis=0)
-        headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
-
-        # plot mean and sem
-
-        axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
-        axs[1].fill_between(
-            t, headings_mean - headings_sem, headings_mean + headings_sem,
-            color=color, alpha=0.2)
-
-    axs[1].set_xlabel('time steps since odor peak (s)')
-    axs[1].set_title('infotaxis simulations\n(wind speed comparison)')
-
-    # add axes for infotaxis history dependence and make plots
-
-    [axs.append(fig.add_subplot(4, 3, 3 + ctr)) for ctr in range(4)]
-
-    for (ax, cg_id) in zip(axs[-4:], INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS):
-
-        mean_early = np.nanmean(headings['it_hist_dependence'][cg_id]['early'], axis=0)
-        sem_early = stats.nansem(headings['it_hist_dependence'][cg_id]['early'], axis=0)
-
-        mean_late = np.nanmean(headings['it_hist_dependence'][cg_id]['late'], axis=0)
-        sem_late = stats.nansem(headings['it_hist_dependence'][cg_id]['late'], axis=0)
-
-        # plot means and stds
-
-        try:
-
-            handle_early = ax.plot(t, mean_early, lw=3, color='b', zorder=0, label='early')[0]
-            ax.fill_between(
-                t, mean_early - sem_early, mean_early + sem_early,
-                color='b', alpha=0.2)
-
-        except:
-
-            pass
-
-        try:
-
-            handle_late = ax.plot(t, mean_late, lw=3, color='g', zorder=0, label='late')[0]
-            ax.fill_between(
-                t, mean_late - sem_late, mean_late + sem_late,
-                color='g', alpha=0.2)
-
-        except:
-
-            pass
-
-        ax.set_xlabel('time steps since odor peak (s)')
-        ax.set_title(SIM_LABELS[cg_id])
-
-        try:
-
-            ax.legend(handles=[handle_early, handle_late])
-
-        except:
-
-            pass
-
-    axs[3].set_ylabel('$\Delta$ heading (degrees)')
+    fig, axs = plt.subplots(2, 1, figsize=FIG_SIZE, tight_layout=True)
 
     # plot heat maps
+    axs[0].hist2d(expt_xs, expt_ys, bins=(X_BINS, Y_BINS))
+    axs[1].hist2d(sim_xs, sim_ys, bins=(X_BINS, Y_BINS))
 
-    axs.append(fig.add_subplot(4, 1, 3))
-    axs.append(fig.add_subplot(4, 1, 4))
+    axs[0].set_ylabel('y (m)')
+    axs[0].set_xlabel('x (m)')
+    axs[1].set_ylabel('y (m)')
+    axs[1].set_xlabel('x (m)')
 
-    axs[6].hist2d(expt_xs, expt_ys, bins=(X_BINS, Y_BINS))
-    axs[7].hist2d(sim_xs, sim_ys, bins=(X_BINS, Y_BINS))
-
-    axs[6].set_ylabel('y (m)')
-    axs[7].set_ylabel('y (m)')
-    axs[7].set_xlabel('x (m)')
-
-    axs[6].set_title('experimental data (fly 0.4 m/s)')
-    axs[7].set_title('infotaxis simulation')
+    axs[0].set_title('experimental')
+    axs[1].set_title('infotaxis simulation')
 
     for ax in axs:
-
         set_fontsize(ax, FONT_SIZE)
 
     return fig
@@ -913,11 +801,9 @@ def infotaxis_position_distribution(
 
 def infotaxis_wind_speed_dependence(
         WIND_TUNNEL_CG_IDS, INFOTAXIS_WIND_SPEED_CG_IDS, MAX_CROSSINGS,
-        INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
-        MAX_CROSSINGS_EARLY, X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        X_0_MIN_SIM, X_0_MAX_SIM, X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
+        X_0_MIN_SIM, X_0_MAX_SIM,
         T_BEFORE_EXPT, T_AFTER_EXPT, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
-        HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
         FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
     """
     Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
@@ -933,46 +819,34 @@ def infotaxis_wind_speed_dependence(
     headings = {}
 
     # get headings for wind tunnel plume crossings
-
     headings['wind_tunnel'] = {}
 
     for cg_id in WIND_TUNNEL_CG_IDS:
-
         crossings_all = session.query(models.Crossing).filter_by(crossing_group_id=cg_id).all()
-
         headings['wind_tunnel'][cg_id] = []
 
         cr_ctr = 0
 
         for crossing in crossings_all:
-
             if cr_ctr >= MAX_CROSSINGS:
-
                 break
 
             # skip this crossing if it doesn't meet our inclusion criteria
-
             x_0 = crossing.feature_set_basic.position_x_peak
             h_0 = crossing.feature_set_basic.heading_xyz_peak
 
             if not (X_0_MIN <= x_0 <= X_0_MAX):
-
                 continue
-
             if not (H_0_MIN <= h_0 <= H_0_MAX):
-
                 continue
 
             # store crossing heading
-
             temp = crossing.timepoint_field(
                 session, 'heading_xyz', -ts_before_expt, ts_after_expt - 1,
                 'peak', 'peak', nan_pad=True)
 
             # subtract initial heading
-
             temp -= temp[ts_before_expt]
-
             headings['wind_tunnel'][cg_id].append(temp)
 
             cr_ctr += 1
@@ -980,7 +854,6 @@ def infotaxis_wind_speed_dependence(
         headings['wind_tunnel'][cg_id] = np.array(headings['wind_tunnel'][cg_id])
 
     # get headings from infotaxis plume crossings
-
     headings['infotaxis'] = {}
 
     for cg_id in INFOTAXIS_WIND_SPEED_CG_IDS:
@@ -996,26 +869,19 @@ def infotaxis_wind_speed_dependence(
         cr_ctr = 0
 
         for crossing in crossings_all:
-
             if cr_ctr >= MAX_CROSSINGS:
-
                 break
 
             # skip this crossing if it doesn't meet our inclusion criteria
-
             x_0 = crossing.feature_set_basic.position_x_peak
             h_0 = crossing.feature_set_basic.heading_xyz_peak
 
             if not (X_0_MIN_SIM <= x_0 <= X_0_MAX_SIM):
-
                 continue
-
             if not (H_0_MIN <= h_0 <= H_0_MAX):
-
                 continue
 
             # store crossing heading
-
             temp = crossing.timepoint_field(
                 session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
                 'peak', 'peak', nan_pad=True)
@@ -1024,130 +890,17 @@ def infotaxis_wind_speed_dependence(
                 temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
 
             # subtract initial heading and store result
-
             temp -= temp[TS_BEFORE_SIM]
-
             headings['infotaxis'][cg_id].append(temp)
 
             cr_ctr += 1
 
         headings['infotaxis'][cg_id] = np.array(headings['infotaxis'][cg_id])
 
-    # get history dependences for infotaxis simulations
-
-    headings['it_hist_dependence'] = {}
-
-    for cg_id in INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS:
-
-        crossings_all = list(session_infotaxis.query(models_infotaxis.Crossing).filter_by(
-            crossing_group_id=cg_id).all())
-
-        headings['it_hist_dependence'][cg_id] = {'early': [], 'late': []}
-
-        cr_ctr = 0
-
-        for crossing in crossings_all:
-
-            if cr_ctr >= MAX_CROSSINGS:
-
-                break
-
-            # skip this crossing if it doesn't meet our inclusion criteria
-
-            x_0 = crossing.feature_set_basic.position_x_peak
-            h_0 = crossing.feature_set_basic.heading_xyz_peak
-
-            if not (X_0_MIN_SIM_HISTORY <= x_0 <= X_0_MAX_SIM_HISTORY):
-
-                continue
-
-            if not (H_0_MIN <= h_0 <= H_0_MAX):
-
-                continue
-
-            # store crossing heading
-
-            temp = crossing.timepoint_field(
-                session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
-                'peak', 'peak', nan_pad=True)
-
-            temp[~np.isnan(temp)] = gaussian_filter1d(
-                temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
-
-            # subtract initial heading
-
-            temp -= temp[TS_BEFORE_SIM]
-
-            # store according to its crossing number
-
-            if crossing.crossing_number <= MAX_CROSSINGS_EARLY:
-
-                headings['it_hist_dependence'][cg_id]['early'].append(temp)
-
-            elif crossing.crossing_number > MAX_CROSSINGS_EARLY:
-
-                headings['it_hist_dependence'][cg_id]['late'].append(temp)
-
-            else:
-
-                raise Exception('crossing number is not early or late for crossing {}'.format(
-                    crossing.id))
-
-            cr_ctr += 1
-
-    headings['it_hist_dependence'][cg_id]['early'] = np.array(
-        headings['it_hist_dependence'][cg_id]['early'])
-
-    headings['it_hist_dependence'][cg_id]['late'] = np.array(
-        headings['it_hist_dependence'][cg_id]['late'])
-
-    # get heatmaps
-
-    if N_HEAT_MAP_TRAJS:
-
-        trajs_expt = session.query(models.Trajectory).\
-            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on').limit(N_HEAT_MAP_TRAJS)
-        trials_sim = session_infotaxis.query(models_infotaxis.Trial).\
-            filter_by(simulation_id=HEAT_MAP_SIM_ID).limit(N_HEAT_MAP_TRAJS)
-
-    else:
-
-        trajs_expt = session.query(models.Trajectory).\
-            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on')
-        trials_sim = session_infotaxis.query(models_infotaxis.Trial).\
-            filter_by(simulation_id=HEAT_MAP_SIM_ID)
-
-    expt_xs = []
-    expt_ys = []
-
-    sim_xs = []
-    sim_ys = []
-
-    for traj in trajs_expt:
-
-        expt_xs.append(traj.timepoint_field(session, 'position_x'))
-        expt_ys.append(traj.timepoint_field(session, 'position_y'))
-
-    for trial in trials_sim:
-
-        sim_xs.append(trial.timepoint_field(session_infotaxis, 'xidx'))
-        sim_ys.append(trial.timepoint_field(session_infotaxis, 'yidx'))
-
-    expt_xs = np.concatenate(expt_xs)
-    expt_ys = np.concatenate(expt_ys)
-
-    sim_xs = np.concatenate(sim_xs) * 0.02 - 0.3
-    sim_ys = np.concatenate(sim_ys) * 0.02 - 0.15
-
     ## MAKE PLOTS
-
-    fig, axs = plt.figure(figsize=FIG_SIZE, tight_layout=True), []
-
-    axs.append(fig.add_subplot(4, 3, 1))
-    axs.append(fig.add_subplot(4, 3, 2, sharey=axs[0]))
+    fig, axs = plt.subplots(1, 2, figsize=FIG_SIZE, tight_layout=True)
 
     # plot wind-speed dependence of wind tunnel trajectories
-
     t = np.arange(-ts_before_expt, ts_after_expt) * DT
 
     handles = []
@@ -1161,23 +914,21 @@ def infotaxis_wind_speed_dependence(
         headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
 
         # plot mean and sem
-
         handles.append(
             axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
         axs[0].fill_between(
             t, headings_mean - headings_sem, headings_mean + headings_sem,
             color=color, alpha=0.2)
 
-    axs[0].set_xlabel('time since odor peak (s)')
+    axs[0].set_xlabel('time since crossing (s)')
     axs[0].set_ylabel('$\Delta$ heading (degrees)')
-    axs[0].set_title('experimental data\n(wind speed comparison)')
+    axs[0].set_title('empirical (fly in ethanol)')
 
     axs[0].legend(handles=handles, loc='best')
 
     t = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM)
 
     for cg_id, wt_cg_id in zip(INFOTAXIS_WIND_SPEED_CG_IDS, WIND_TUNNEL_CG_IDS):
-
         label = EXPT_LABELS[wt_cg_id]
         color = EXPT_COLORS[wt_cg_id]
 
@@ -1185,279 +936,163 @@ def infotaxis_wind_speed_dependence(
         headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
 
         # plot mean and sem
-
         axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
         axs[1].fill_between(
             t, headings_mean - headings_sem, headings_mean + headings_sem,
             color=color, alpha=0.2)
 
-    axs[1].set_xlabel('time steps since odor peak (s)')
-    axs[1].set_title('infotaxis simulations\n(wind speed comparison)')
-
-    # add axes for infotaxis history dependence and make plots
-
-    [axs.append(fig.add_subplot(4, 3, 3 + ctr)) for ctr in range(4)]
-
-    for (ax, cg_id) in zip(axs[-4:], INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS):
-
-        mean_early = np.nanmean(headings['it_hist_dependence'][cg_id]['early'], axis=0)
-        sem_early = stats.nansem(headings['it_hist_dependence'][cg_id]['early'], axis=0)
-
-        mean_late = np.nanmean(headings['it_hist_dependence'][cg_id]['late'], axis=0)
-        sem_late = stats.nansem(headings['it_hist_dependence'][cg_id]['late'], axis=0)
-
-        # plot means and stds
-
-        try:
-
-            handle_early = ax.plot(t, mean_early, lw=3, color='b', zorder=0, label='early')[0]
-            ax.fill_between(
-                t, mean_early - sem_early, mean_early + sem_early,
-                color='b', alpha=0.2)
-
-        except:
-
-            pass
-
-        try:
-
-            handle_late = ax.plot(t, mean_late, lw=3, color='g', zorder=0, label='late')[0]
-            ax.fill_between(
-                t, mean_late - sem_late, mean_late + sem_late,
-                color='g', alpha=0.2)
-
-        except:
-
-            pass
-
-        ax.set_xlabel('time steps since odor peak (s)')
-        ax.set_title(SIM_LABELS[cg_id])
-
-        try:
-
-            ax.legend(handles=[handle_early, handle_late])
-
-        except:
-
-            pass
-
-    axs[3].set_ylabel('$\Delta$ heading (degrees)')
-
-    # plot heat maps
-
-    axs.append(fig.add_subplot(4, 1, 3))
-    axs.append(fig.add_subplot(4, 1, 4))
-
-    axs[6].hist2d(expt_xs, expt_ys, bins=(X_BINS, Y_BINS))
-    axs[7].hist2d(sim_xs, sim_ys, bins=(X_BINS, Y_BINS))
-
-    axs[6].set_ylabel('y (m)')
-    axs[7].set_ylabel('y (m)')
-    axs[7].set_xlabel('x (m)')
-
-    axs[6].set_title('experimental data (fly 0.4 m/s)')
-    axs[7].set_title('infotaxis simulation')
+    axs[1].set_xlabel('time steps since crossing (s)')
+    axs[1].set_title('infotaxis')
 
     for ax in axs:
-
         set_fontsize(ax, FONT_SIZE)
 
     return fig
 
 
-def classify_trajectories(
-        SEED,
-        EXPT_IDS,
-        CLASSIFIERS,
-        MIN_INTEGRATED_ODORS, MIN_MAX_ODORS,
-        N_TRAJS_PER_CLASS, PROPORTION_TRAIN, N_TRIALS,
-        BINS, AX_SIZE, EXPT_LABELS, FONT_SIZE):
+def example_trajs_with_models(
+        SEED, EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP,
+        DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
+        HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
+        FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
+        EXPT_LABEL, FONT_SIZE):
     """
-    Show classification accuracy when classifying whether insect is engaged in odor-tracking
-    or not.
+    Show an example trajectory through a wind tunnel plume with the crossings marked.
+    Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
+    with its SEM as well as many individual examples.
     """
 
-    np.random.seed(SEED)
+    from db_api.infotaxis import models as models_infotaxis
+    from db_api.infotaxis.connect import session as session_infotaxis
 
-    # loop through experiments
+    if isinstance(TRAJ_NUMBER, int):
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPT_ID, odor_state='on', clean=True).all()
+        traj = list(trajs)[TRAJ_NUMBER]
+    else:
+        traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
 
-    n_traj_pairs = {}
-    train_accuracies = {}
-    test_accuracies = {}
+    # get plottable quantities for real trajectory
+    x_traj, y_traj, z_traj = traj.positions(session).T[:, TRAJ_START_TP:TRAJ_END_TP]
+    c_traj = traj.odors(session)[TRAJ_START_TP:TRAJ_END_TP]
 
-    for e_ctr, expt_id in enumerate(EXPT_IDS):
-
-        print('Experiment: {}'.format(expt_id))
-
-        # get all trajectories that meet criteria
-
-        trajs = {'on': [], 'none': []}
-
-        for odor_state in trajs.keys():
-
-            traj_array = list(session.query(models.Trajectory).filter_by(
-                experiment_id=expt_id, odor_state=odor_state, clean=True).all())
-
-            for traj in traj_array:  #np.random.permutation(traj_array):
-
-                odors = traj.odors(session)
-
-                if 'mosquito' in expt_id:
-
-                    odors -= 400
-
-                integrated_odor = odors.sum() * 0.01
-
-                max_odor = odors.max()
-
-                # make sure they meet our criteria
-
-                if MIN_INTEGRATED_ODORS is not None:
-
-                    if integrated_odor < MIN_INTEGRATED_ODORS[expt_id]:
-
-                        continue
-
-                if MIN_MAX_ODORS is not None:
-
-                    if max_odor < MIN_MAX_ODORS[expt_id]:
-
-                        continue
-
-                trajs[odor_state].append(traj)
-
-        # get number of pairs of trajectories from different classes
-
-        n_traj_pairs[expt_id] = min(len(trajs['on']), len(trajs['none']))
-
-        n_train = int(round(PROPORTION_TRAIN * n_traj_pairs[expt_id]))
-        n_test = n_traj_pairs[expt_id] - n_train
-
-        print('{} training trajs per class for expt: {}'.format(n_train, expt_id))
-        print('{} test trajs per class for expt: {}'.format(n_test, expt_id))
-
-        # loop through trials
-
-        train_accuracies[expt_id] = {classifier[0]: [] for classifier in CLASSIFIERS}
-        test_accuracies[expt_id] = {classifier[0]: [] for classifier in CLASSIFIERS}
-
-        for tr_ctr in range(N_TRIALS):
-
-            if (tr_ctr + 1) % 10 == 0:
-
-                print('Trial {}'.format(tr_ctr + 1))
-
-            # shuffled trajectory list and get subset for classifier testing
-
-            trajs_shuffled = {
-                odor_state: np.random.permutation(traj_set)[:n_traj_pairs[expt_id]]
-                for odor_state, traj_set in trajs.items()
-            }
-
-            # get training and test velocity time-series
-
-            vels_train = {
-                odor_state: [traj.velocities(session) for traj in traj_set[:n_train]]
-                for odor_state, traj_set in trajs_shuffled.items()
-            }
-
-            vels_test = {
-                odor_state: [traj.velocities(session) for traj in traj_set[n_train:]]
-                for odor_state, traj_set in trajs_shuffled.items()
-            }
-
-            for classifier in CLASSIFIERS:
-
-                # instantiate classifier
-
-                if classifier[0] == 'var':
-
-                    clf = tsc.VarClassifierBinary(dim=3, order=classifier[1])
-
-                elif classifier[0] == 'mean_speed':
-
-                    clf = tsc.MeanSpeedClassifierBinary()
-
-                elif classifier[0] == 'mean_heading':
-
-                    clf = tsc.MeanHeadingClassifierBinary()
-
-                elif classifier[0] == 'std_heading':
-
-                    clf = tsc.StdHeadingClassifierBinary()
-
-                # train classifier
-
-                clf.train(positives=vels_train['on'], negatives=vels_train['none'])
-
-                # make predictions on training set
-
-                train_predictions = np.array(clf.predict(vels_train['on'] + vels_train['none']))
-                train_correct = np.concatenate([[1] * n_train + [-1] * n_train])
-
-                train_accuracy = 100 * np.mean(train_predictions == train_correct)
-
-                # make predictions on test set
-
-                # shuffle test trajectories for good luck
-
-                rand_idxs = np.random.permutation(2 * len(vels_test['on']))
-
-                vels_test_shuffled = np.array(vels_test['on'] + vels_test['none'])[rand_idxs]
-                test_correct = np.concatenate([[1] * n_test + [-1] * n_test])[rand_idxs]
-
-                test_predictions = np.array(
-                    clf.predict(vels_test_shuffled))
-
-                test_accuracy = 100 * np.mean(test_predictions == test_correct)
-
-                # store results
-
-                train_accuracies[expt_id][classifier[0]].append(train_accuracy)
-                test_accuracies[expt_id][classifier[0]].append(test_accuracy)
-
+    # get corresponding infotaxis trajectory
 
     ## MAKE PLOTS
+    fig, axs = plt.subplots(4, 1, figsize=FIG_SIZE, tight_layout=True)
 
-    fig_size = (len(EXPT_IDS) * AX_SIZE[0], len(CLASSIFIERS) * AX_SIZE[1])
+    #  plot example trajectory
+    axs.append(fig.add_subplot(3, 1, 1, projection='3d'))
 
-    fig, axs = plt.subplots(len(CLASSIFIERS), len(EXPT_IDS), figsize=fig_size,
-        sharex=True, sharey=True, tight_layout=True)
+    # overlay plume cylinder
+    CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
+    CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
 
-    for classifier, ax_row in zip(CLASSIFIERS, axs):
+    CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
+    CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
 
-        if len(EXPT_IDS) == 1:
+    MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
 
-            ax_row = [ax_row]
+    y = np.linspace(-1, 1, 100, endpoint=True)
+    x = np.linspace(-0.3, 1, 5, endpoint=True)
+    yy, xx = np.meshgrid(y, x)
+    zz = np.sqrt(1 - yy ** 2)
 
-        for expt_id, ax in zip(EXPT_IDS, ax_row):
+    yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
+    zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
+    zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
+    rstride = 20
+    cstride = 10
 
-            ax.hist(
-                [
-                    train_accuracies[expt_id][classifier[0]],
-                    test_accuracies[expt_id][classifier[0]]
-                ],
-                bins=BINS, lw=0, color=['r', 'k'])
+    axs[0].plot_surface(
+        xx, yy, zz_top, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
-            if classifier == CLASSIFIERS[0]:
+    axs[0].plot_surface(
+        xx, yy, zz_bottom, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
-                ax.set_title(EXPT_LABELS[expt_id])
+    axs[0].scatter(
+        x_traj, y_traj, z_traj, c=c_traj, s=SCATTER_SIZE,
+        vmin=0, vmax=MAX_CONC/2, cmap=cmx.hot, lw=0, alpha=1)
 
-            if expt_id == EXPT_IDS[0]:
+    axs[0].set_xlim(-0.3, 1)
+    axs[0].set_ylim(-0.15, 0.15)
+    axs[0].set_zlim(-0.15, 0.15)
 
-                ax.set_ylabel('number of trials\n({} classifier)'.format(
-                    classifier[0]).replace('_', ' '))
+    axs[0].set_xticks([-0.3, 1.])
+    axs[0].set_yticks([-0.15, 0.15])
+    axs[0].set_zticks([-0.15, 0.15])
 
-                if classifier == CLASSIFIERS[0]:
+    axs[0].set_xticklabels([-30, 100])
+    axs[0].set_yticklabels([-15, 15])
+    axs[0].set_zticklabels([-15, 15])
 
-                    ax.legend(['training', 'test'])
+    axs[0].set_xlabel('x (cm)')
+    axs[0].set_ylabel('y (cm)')
+    axs[0].set_zlabel('z (cm)')
 
-        if classifier == CLASSIFIERS[-1]:
+    # plot several crossings
+    axs.append(fig.add_subplot(3, 1, 2, projection='3d'))
 
-            ax.set_xlabel('classification\naccuracy')
+    # overlay plume cylinder
+    axs[1].plot_surface(
+        xx, yy, zz_top, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
-    for ax in axs.flat:
+    axs[1].plot_surface(
+        xx, yy, zz_bottom, lw=0,
+        color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
+    # plot crossings
+    for crossing in crossing_examples:
+
+        axs[1].scatter(
+            crossing['position_x'], crossing['position_y'], crossing['position_z'],
+            c=crossing['odor'], s=SCATTER_SIZE,
+            vmin=0, vmax=MAX_CONC / 2, cmap=cmx.hot, lw=0, alpha=1)
+
+    axs[1].set_xlim(-0.3, 1)
+    axs[1].set_ylim(-0.15, 0.15)
+    axs[1].set_zlim(-0.15, 0.15)
+
+    axs[1].set_xticks([-0.3, 1.])
+    axs[1].set_yticks([-0.15, 0.15])
+    axs[1].set_zticks([-0.15, 0.15])
+
+    axs[1].set_xticklabels([-30, 100])
+    axs[1].set_yticklabels([-15, 15])
+    axs[1].set_zticklabels([-15, 15])
+
+    axs[1].set_xlabel('x (cm)')
+    axs[1].set_ylabel('y (cm)')
+    axs[1].set_zlabel('z (cm)')
+
+    # plot headings
+    axs.append(fig.add_subplot(3, 2, 6))
+
+    t = np.arange(-TS_BEFORE_HEADING, TS_AFTER_HEADING) * DT
+    headings_mean = np.nanmean(headings, axis=0)
+    headings_std = np.nanstd(headings, axis=0)
+    headings_sem = stats.nansem(headings, axis=0)
+
+    # plot example crossings
+    for crossing in crossing_examples:
+        axs[2].plot(t, crossing['heading'], lw=1, color='k', alpha=0.5, zorder=-1)
+
+    # plot mean, sem, and std
+    axs[2].plot(t, headings_mean, lw=3, color='k', zorder=1)
+    axs[2].plot(t, headings_mean - headings_std, lw=3, ls='--', color='k', zorder=1)
+    axs[2].plot(t, headings_mean + headings_std, lw=3, ls='--', color='k', zorder=1)
+    axs[2].fill_between(
+        t, headings_mean - headings_sem, headings_mean + headings_sem,
+        color='k', alpha=0.2)
+
+    axs[2].set_xlabel('time since crossing (s)')
+    axs[2].set_ylabel('heading (degrees)')
+
+    for ax in axs:
         set_fontsize(ax, FONT_SIZE)
 
     return fig
+
