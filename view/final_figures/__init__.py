@@ -13,6 +13,8 @@ from db_api.connect import session
 
 from axis_tools import set_fontsize
 import simple_models
+from simple_tracking import GaussianLaminarPlume
+from simple_tracking import CenterlineInferringAgent, SurgingAgent
 import stats
 import time_series_classifier as tsc
 from time_series import get_ks_p_vals
@@ -943,7 +945,7 @@ def infotaxis_wind_speed_dependence(
 
 def example_trajs_real_and_models(
         EXPT_ID, TRAJ_NUMBER, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
-        DURATION, DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
+        DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
         HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
         SEED_SURGE, SEED_CENTERLINE,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
@@ -968,15 +970,46 @@ def example_trajs_real_and_models(
     xs, ys, zs = traj.positions(session).T[:, :TRAJ_END_TP]
     cs = traj.odors(session)[:TRAJ_END_TP]
 
-    traj_dict_real = {'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
+    traj_dict_real = {'title': 'real', 'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
+
+    # generate trajectories for simple trackers
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    start_pos = np.array([xs[0], ys[0], zs[0]])
+    duration = TRAJ_END_TP * DT
 
     # generate surge-cast trajectory
     np.random.seed(SEED_SURGE)
-    traj_dict_surge = {}
+    ag_surge = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
+        hit_trigger='peak', surge_amp=SURGE_AMP, tau_surge=TAU_SURGE,
+        bounds=BOUNDS)
+    traj_surge = ag_surge.track(pl, start_pos, duration, DT)
+    traj_dict_surge = {
+        'title': 'surge-cast',
+        'xs': traj_surge['xs'][:, 0],
+        'ys': traj_surge['xs'][:, 1],
+        'zs': traj_surge['xs'][:, 2],
+        'cs': traj_surge['odors'],
+    }
 
     # generate centerline-inferring trajectory
     np.random.seed(SEED_CENTERLINE)
-    traj_dict_centerline = {}
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
+    ag_centerline = CenterlineInferringAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
+    traj_centerline = ag_centerline.track(pl, start_pos, duration, DT)
+    traj_dict_centerline = {
+        'title': 'centerline-inferring',
+        'xs': traj_centerline['xs'][:, 0],
+        'ys': traj_centerline['xs'][:, 1],
+        'zs': traj_centerline['xs'][:, 2],
+        'cs': traj_centerline['odors'],
+    }
 
     # get infotaxis trajectory corresponding to real trajectory
     real_trajectory_id = traj.id
@@ -1020,6 +1053,7 @@ def example_trajs_real_and_models(
     zs_infotaxis = np.array(zs_infotaxis)
 
     traj_dict_infotaxis = {
+        'title': 'infotaxis',
         'xs': xs_infotaxis,
         'ys': ys_infotaxis,
         'zs': zs_infotaxis,
@@ -1031,7 +1065,12 @@ def example_trajs_real_and_models(
     axs = [fig.add_subplot(4, 1, ctr+1, projection='3d') for ctr in range(4)]
 
     # plot all trajectories
-    traj_dicts = [traj_dict_real, traj_dict_infotaxis]
+    traj_dicts = [
+        traj_dict_real,
+        traj_dict_surge,
+        traj_dict_centerline,
+        traj_dict_infotaxis
+    ]
 
     for traj_dict, ax in zip(traj_dicts, axs):
 
@@ -1096,6 +1135,8 @@ def example_trajs_real_and_models(
         ax.set_xlabel('x (cm)')
         ax.set_ylabel('y (cm)')
         ax.set_zlabel('z (cm)')
+
+        ax.set_title(traj_dict['title'])
 
     for ax in axs:
         set_fontsize(ax, FONT_SIZE)
