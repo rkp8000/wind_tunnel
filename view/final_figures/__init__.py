@@ -129,9 +129,15 @@ def example_traj_and_crossings(
         xx, yy, zz_bottom, lw=0,
         color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
+    axs[0].plot(x_traj, y_traj, z_traj, color='k', lw=3, zorder=1)
     axs[0].scatter(
         x_traj, y_traj, z_traj, c=c_traj, s=SCATTER_SIZE,
         vmin=0, vmax=MAX_CONC/2, cmap=cmx.hot, lw=0, alpha=1)
+    # mark start
+    axs[0].scatter(
+        x_traj[0], y_traj[0], z_traj[0], s=400, marker='*', lw=0, c='g',
+        zorder=3
+    )
 
     axs[0].set_xlim(-0.3, 1)
     axs[0].set_ylim(-0.15, 0.15)
@@ -727,6 +733,25 @@ def infotaxis_history_dependence(
     return fig
 
 
+def infotaxis_average_dt(INFOTAXIS_SIM_IDS):
+    """
+    Print out the average DT used in infotaxis trajectories.
+    """
+    from db_api.infotaxis import models as models_infotaxis
+    from db_api.infotaxis.connect import session as session_infotaxis
+
+    for sim_id in INFOTAXIS_SIM_IDS:
+        print('Simulation: {}'.format(sim_id))
+        trials = session_infotaxis.query(models_infotaxis.Trial).filter_by(
+            simulation_id=sim_id).all()
+        geom_configs = [trial.geom_config for trial in trials]
+        avg_dts = [
+            geom_config.extension_real_trajectory.avg_dt
+            for geom_config in geom_configs
+        ]
+        print('Average DT = {}'.format(np.mean(avg_dts)))
+
+
 def infotaxis_position_distribution(
         HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
         FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
@@ -965,6 +990,8 @@ def example_trajs_real_and_models(
         traj = list(trajs)[TRAJ_NUMBER]
     else:
         traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
+
+    print('Trajectory: {}'.format(traj.id))
 
     # get plottable quantities for real trajectory
     xs, ys, zs = traj.positions(session).T[:, :TRAJ_END_TP]
