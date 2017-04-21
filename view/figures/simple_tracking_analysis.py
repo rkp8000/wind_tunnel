@@ -486,6 +486,7 @@ def optimize_model_params(
     axs[0].plot(bincs_speed, cts_speed_empirical, lw=2, color='k')
     axs[0].plot(bincs_speed, cts_speed, lw=2, color='r')
 
+    axs[0].set_xticks([0, .5, 1., 1.5, 2])
     axs[0].set_xlabel('speed (m/s)')
     axs[0].set_ylabel('rel. counts')
 
@@ -494,11 +495,13 @@ def optimize_model_params(
     axs[1].plot(bincs_w, cts_w_empirical, lw=2, color='k')
     axs[1].plot(bincs_w, cts_w, lw=2, color='r')
 
+    axs[1].set_xticks([0, 50, 100, 150, 200])
     axs[1].set_xlabel('ang. vel. (rad/s)')
 
     axs[2].plot(bincs_y, cts_y_empirical, lw=2, color='k')
     axs[2].plot(bincs_y, cts_y, lw=2, color='r')
 
+    axs[2].set_xticks([-.15, -.05, .05, .15])
     axs[2].set_xlabel('y (m)')
 
     axs.append(fig.add_subplot(2, 1, 2))
@@ -664,14 +667,13 @@ def crossing_triggered_headings_early_late_centerline(
         H_MIN_PEAK, H_MAX_PEAK,
         X_MIN_PEAK, X_MAX_PEAK,
         EARLY_LESS_THAN,
-        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER):
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER, SAVE_FILE):
     """
     Fly several agents through a simulated plume and plot their plume-crossing-triggered
     headings.
     """
 
     # build plume and agent
-
     pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
 
     k_0 = K_0 * np.eye(2)
@@ -683,15 +685,12 @@ def crossing_triggered_headings_early_late_centerline(
         k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
 
     # GENERATE TRAJECTORIES
-
     np.random.seed(SEED)
-
     trajs = []
 
     for _ in range(N_TRAJS):
 
         # choose random start position
-
         start_pos = np.array([
             np.random.uniform(*BOUNDS[0]),
             np.random.uniform(*BOUNDS[1]),
@@ -699,7 +698,6 @@ def crossing_triggered_headings_early_late_centerline(
         ])
 
         # make trajectory
-
         traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
 
         traj['headings'] = heading(traj['vs'])[:, 2]
@@ -759,15 +757,10 @@ def crossing_triggered_headings_early_late_centerline(
                     traj['headings'][peak_time:end]
 
             if SUBTRACT_PEAK_HEADING:
-
                 crossing -= crossing[ts_before]
-
-            if ctr < EARLY_LESS_THAN:
-
+            if ctr + 1 < EARLY_LESS_THAN:
                 crossings_early.append(crossing)
-
             else:
-
                 crossings_late.append(crossing)
 
     n_crossings = np.array(n_crossings)
@@ -783,6 +776,9 @@ def crossing_triggered_headings_early_late_centerline(
 
     h_mean_late = np.nanmean(crossings_late, axis=0)
     h_sem_late = nansem(crossings_late, axis=0)
+
+    save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
+    np.save(SAVE_FILE, np.array([save_data]))
 
     fig, axs = plt.figure(figsize=(15, 15), tight_layout=True), []
 
@@ -888,7 +884,7 @@ def crossing_triggered_headings_early_late_surge(
         H_MIN_PEAK, H_MAX_PEAK,
         X_MIN_PEAK, X_MAX_PEAK,
         EARLY_LESS_THAN,
-        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER):
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER, SAVE_FILE):
     """
     Fly several agents through a simulated plume and plot their plume-crossing-triggered
     headings.
@@ -928,6 +924,8 @@ def crossing_triggered_headings_early_late_surge(
     crossings_early = []
     crossings_late = []
 
+    crossings_save = []
+
     ts_before = int(T_BEFORE / DT)
     ts_after = int(T_AFTER / DT)
 
@@ -963,12 +961,23 @@ def crossing_triggered_headings_early_late_surge(
                 crossing[ts_before:ts_before + ts_after_crossing] = \
                     traj['headings'][peak_time:end]
 
+            crossings_save.append((ctr + 1, crossing.copy()))
+
             if SUBTRACT_PEAK_HEADING:
                 crossing -= crossing[ts_before]
-            if ctr < EARLY_LESS_THAN:
+            if ctr + 1 < EARLY_LESS_THAN:
                 crossings_early.append(crossing)
             else:
                 crossings_late.append(crossing)
+
+    # save crossings
+    save_dict_full = {
+        'ts_before': ts_before,
+        'ts_after': ts_after,
+        'crossings': crossings_save
+    }
+    save_file = SAVE_FILE + '_full.npy'
+    np.save(save_file, np.array([save_dict_full]))
 
     n_crossings = np.array(n_crossings)
 
@@ -984,6 +993,9 @@ def crossing_triggered_headings_early_late_surge(
 
     h_mean_late = np.nanmean(crossings_late, axis=0)
     h_sem_late = nansem(crossings_late, axis=0)
+
+    save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
+    np.save(SAVE_FILE + '.npy', np.array([save_data]))
 
     fig, axs = plt.figure(figsize=(15, 15), tight_layout=True), []
 
