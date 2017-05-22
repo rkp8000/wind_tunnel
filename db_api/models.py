@@ -362,23 +362,23 @@ class Crossing(Base):
 
     @property
     def t_flight_start(self):
-        return self.start_timepoint_id - self.trajectory.start_timepoint_id
+        return (self.start_timepoint_id - self.trajectory.start_timepoint_id) / 100
 
     @property
     def t_flight_entry(self):
-        return self.entry_timepoint_id - self.trajectory.start_timepoint_id
+        return (self.entry_timepoint_id - self.trajectory.start_timepoint_id) / 100
 
     @property
     def t_flight_peak(self):
-        return self.peak_timepoint_id - self.trajectory.start_timepoint_id
+        return (self.peak_timepoint_id - self.trajectory.start_timepoint_id) / 100
 
     @property
     def t_flight_exit(self):
-        return self.exit_timepoint_id - self.trajectory.start_timepoint_id
+        return (self.exit_timepoint_id - self.trajectory.start_timepoint_id) / 100
 
     @property
     def t_flight_end(self):
-        return self.end_timepoint_id - self.trajectory.start_timepoint_id
+        return (self.end_timepoint_id - self.trajectory.start_timepoint_id) / 100
 
     def timepoint_field(
             self, session, field, first, last,
