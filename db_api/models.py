@@ -81,85 +81,102 @@ class Trajectory(Base):
 
     def timepoints(self, session):
         """Return all timepoints associated with this trajectory."""
-        tps = session.query(Timepoint).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id)).all()
+        tps = session.query(Timepoint).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id)).all()
 
         return tps
 
     def timepoint_field(self, session, field):
         """Return one field of timepoints associated with this trajectory."""
-        data = session.query(getattr(Timepoint, field)).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        data = session.query(getattr(Timepoint, field)).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
 
         return np.array(data.all()).flatten()
 
     # original quantities
     def positions(self, session):
         """Get positions associated with this trajectory."""
-        positions = session.query(Timepoint.position_x, Timepoint.position_y, Timepoint.position_z).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        positions = session.query(
+            Timepoint.position_x,
+            Timepoint.position_y,
+            Timepoint.position_z).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(positions.all())
 
     def velocities(self, session):
         """Get velocities associated with this trajectory."""
-        velocities = session.query(Timepoint.velocity_x, Timepoint.velocity_y, Timepoint.velocity_z).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        velocities = session.query(
+            Timepoint.velocity_x,
+            Timepoint.velocity_y,
+            Timepoint.velocity_z).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(velocities.all())
 
     def odors(self, session):
         """Get odor time-series associated with this trajectory."""
-        odors = session.query(Timepoint.odor).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        odors = session.query(Timepoint.odor).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(odors.all()).flatten()
 
     # auxiliary quantities
     def velocities_a(self, session):
-        velocities_a = session.query(Timepoint.velocity_a).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        velocities_a = session.query(Timepoint.velocity_a).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(velocities_a.all()).flatten()
 
     def accelerations(self, session):
-        accelerations = session.query(Timepoint.acceleration_x, Timepoint.acceleration_y, Timepoint.acceleration_z).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        accelerations = session.query(
+            Timepoint.acceleration_x,
+            Timepoint.acceleration_y,
+            Timepoint.acceleration_z).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(accelerations.all())
 
     def accelerations_a(self, session):
-        accelerations_a = session.query(Timepoint.acceleration_a).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        accelerations_a = session.query(Timepoint.acceleration_a).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(accelerations_a.all()).flatten()
 
     def headings(self, session):
-        headings = session.query(Timepoint.heading_xy, Timepoint.heading_xz, Timepoint.heading_xyz).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        headings = session.query(
+            Timepoint.heading_xy,
+            Timepoint.heading_xz,
+            Timepoint.heading_xyz).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(headings.all())
 
     def angular_velocities(self, session):
-        angular_velocities = session.query(Timepoint.angular_velocity_x,
-                                           Timepoint.angular_velocity_y,
-                                           Timepoint.angular_velocity_z).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        angular_velocities = session.query(
+            Timepoint.angular_velocity_x,
+            Timepoint.angular_velocity_y,
+            Timepoint.angular_velocity_z).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(angular_velocities.all())
 
     def angular_velocities_a(self, session):
-        angular_velocities_a = session.query(Timepoint.angular_velocity_a).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        angular_velocities_a = session.query(
+            Timepoint.angular_velocity_a).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(angular_velocities_a.all()).flatten()
 
     def angular_accelerations(self, session):
-        angular_accelerations = session.query(Timepoint.angular_acceleration_x,
-                                              Timepoint.angular_acceleration_y,
-                                              Timepoint.angular_acceleration_z).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        angular_accelerations = session.query(
+            Timepoint.angular_acceleration_x,
+            Timepoint.angular_acceleration_y,
+            Timepoint.angular_acceleration_z).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(angular_accelerations.all())
 
     def angular_accelerations_a(self, session):
-        angular_accelerations_a = session.query(Timepoint.angular_acceleration_a).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        angular_accelerations_a = session.query(
+            Timepoint.angular_acceleration_a).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(angular_accelerations_a.all()).flatten()
 
     def distances_from_wall(self, session):
-        distances_from_wall = session.query(Timepoint.distance_from_wall).\
-            filter(Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
+        distances_from_wall = session.query(
+            Timepoint.distance_from_wall).filter(
+            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id))
         return np.array(distances_from_wall.all()).flatten()
 
 
@@ -343,18 +360,42 @@ class Crossing(Base):
     def duration(self):
         return (self.exit_timepoint_id - self.entry_timepoint_id) / 100
 
-    def timepoint_field(self, session, field, first, last, first_rel_to, last_rel_to, nan_pad=False):
+    @property
+    def t_flight_start(self):
+        return self.start_timepoint_id - self.trajectory.start_timepoint_id
+
+    @property
+    def t_flight_entry(self):
+        return self.entry_timepoint_id - self.trajectory.start_timepoint_id
+
+    @property
+    def t_flight_peak(self):
+        return self.peak_timepoint_id - self.trajectory.start_timepoint_id
+
+    @property
+    def t_flight_exit(self):
+        return self.exit_timepoint_id - self.trajectory.start_timepoint_id
+
+    @property
+    def t_flight_end(self):
+        return self.end_timepoint_id - self.trajectory.start_timepoint_id
+
+    def timepoint_field(
+            self, session, field, first, last,
+            first_rel_to, last_rel_to, nan_pad=False):
         """
         Get a column of timepoints for a specified time.
         Note: The earliest and latest timepoints that will be returned are those with
         ids equal to start_timepoint_id, and end_timepoint_id, respectively.
+
         :param session: session
         :param field: what timepoint field you want
         :param first: how many timepoints after first_rel_to timepoint to get
         :param last: how many timepoints after last_rel_to timpeoint to get
         :param first_rel_to: string: 'start', 'entry', 'peak', 'exit', 'end'
         :param last_rel_to: same options as "first_rel_to"
-        :param nan_pad: whether or not to pad time-series with nans, should the available timepoints be too few
+        :param nan_pad: whether or not to pad time-series with nans,
+            should the available timepoints be too few
         :return: 1D array of timepoints
         """
         rel_tos = {'start': self.start_timepoint_id,
