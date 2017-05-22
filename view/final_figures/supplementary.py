@@ -271,7 +271,8 @@ def early_vs_late_heading_timecourse_x0_accounted_for(
             scatter_ys = []
             crossing_ns = []
 
-            # get all initial headings, initial xs, peak concentrations, and heading time-series
+            # get all initial headings, initial xs, peak concentrations,
+            # and heading time-series
             for crossing in crossings_dict[label]:
 
                 assert crossing.crossing_number > 0
