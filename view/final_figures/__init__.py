@@ -4,18 +4,20 @@ import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
+import random
 from random import choice
 from pprint import pprint
 from scipy.ndimage import gaussian_filter1d
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, ttest_rel
 from scipy.signal import resample
-import warnings; warnings.filterwarnings(
-    "ignore", category=UserWarning, module="matplotlib")
+from sklearn import linear_model
+import warnings; warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
 from db_api import models
 from db_api.connect import session
 
 from axis_tools import set_fontsize
+from plot import get_n_colors
 import simple_models
 from simple_tracking import GaussianLaminarPlume
 from simple_tracking import CenterlineInferringAgent, SurgingAgent
@@ -648,6 +650,516 @@ def early_vs_late_heading_timecourse(
     return fig_0, fig_1
 
 
+def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
+        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, CROSSING_NUMBER_MAX,
+        MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
+        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
+        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
+        P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
+        FONT_SIZE):
+    """
+    Show early vs. late headings for different experiments, along with a plot of the
+    p-values for the difference between the two means.
+    """
+
+    # convert times to time steps
+    ts_before = int(round(T_BEFORE / DT))
+    ts_after = int(round(T_AFTER / DT))
+    scatter_ts = [ts_before + int(round(t / DT)) for t in SCATTER_INTEGRATION_WINDOW]
+
+    # loop over crossing groups
+    x_0s_dict = {}
+    t_flights_dict = {}
+    headings_dict = {}
+    residuals_dict = {}
+    p_vals_dict = {}
+
+    n_trajs_dict = {}
+
+    scatter_ys_dict = {}
+    crossing_ns_dict = {}
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        # get crossing group
+        crossing_group = session.query(models.CrossingGroup).get(cg_id)
+
+        # get early and late crossings
+        crossings_dict = {}
+        crossings_all = session.query(models.Crossing).filter_by(
+            crossing_group=crossing_group)
+        crossings_dict['early'] = crossings_all.filter(
+            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
+        crossings_dict['late'] = crossings_all.filter(
+            models.Crossing.crossing_number > MAX_CROSSINGS_EARLY,
+            models.Crossing.crossing_number <= CROSSING_NUMBER_MAX)
+
+        x_0s_dict[cg_id] = {}
+        t_flights_dict[cg_id] = {}
+        headings_dict[cg_id] = {}
+        n_trajs_dict[cg_id] = {}
+
+        scatter_ys_dict[cg_id] = {}
+        crossing_ns_dict[cg_id] = {}
+
+        for label in ['early', 'late']:
+
+            x_0s = []
+            t_flights = []
+            headings = []
+            scatter_ys = []
+            crossing_ns = []
+
+            # get all initial headings, initial xs, peak concentrations,
+            # and heading time-series
+            unique_trajs = []
+            for crossing in crossings_dict[label]:
+
+                assert crossing.crossing_number > 0
+                if label == 'early':
+                    assert 0 < crossing.crossing_number <= MAX_CROSSINGS_EARLY
+                elif label == 'late':
+                    assert MAX_CROSSINGS_EARLY < crossing.crossing_number
+                    assert crossing.crossing_number <= CROSSING_NUMBER_MAX
+
+                # throw away crossings that do not meet trigger criteria
+                x_0 = getattr(
+                    crossing.feature_set_basic, 'position_x_{}'.format('peak'))
+                h_0 = getattr(
+                    crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
+
+                if not (X_0_MIN <= x_0 <= X_0_MAX): continue
+                if not (H_0_MIN <= h_0 <= H_0_MAX): continue
+
+                # store x_0 (uw/dw position)
+                x_0s.append(x_0)
+
+                # store t_flight
+                t_flights.append(crossing.t_flight_peak)
+
+                # save which trajectory this came from
+                if crossing.trajectory_id not in unique_trajs:
+                    unique_trajs.append(crossing.trajectory_id)
+
+                # get and store headings
+                temp = crossing.timepoint_field(
+                    session, 'heading_xyz', -ts_before, ts_after - 1,
+                    'peak', 'peak', nan_pad=True)
+
+                # subtract initial heading if desired
+                if SUBTRACT_INITIAL_HEADING: temp -= temp[ts_before]
+
+                # store headings
+                headings.append(temp)
+
+                # calculate mean heading over integration window for scatter plot
+                scatter_ys.append(np.nanmean(temp[scatter_ts[0]:scatter_ts[1]]))
+                crossing_ns.append(crossing.crossing_number)
+
+            x_0s_dict[cg_id][label] = np.array(x_0s).copy()
+            t_flights_dict[cg_id][label] = np.array(t_flights).copy()
+            headings_dict[cg_id][label] = np.array(headings).copy()
+
+            n_trajs_dict[cg_id][label] = len(unique_trajs)
+
+            print('CROSSING GROUP "{}"'.format(CROSSING_GROUP_LABELS[cg_id]))
+            print('CROSSING SUBSET "{}"'.format(label))
+            print('{} CROSSINGS; {} UNIQUE TRAJECTORIES'.format(
+                len(x_0s), len(unique_trajs)))
+
+            scatter_ys_dict[cg_id][label] = np.array(scatter_ys).copy()
+            crossing_ns_dict[cg_id][label] = np.array(crossing_ns).copy()
+
+        x_early = x_0s_dict[cg_id]['early']
+        x_late = x_0s_dict[cg_id]['late']
+        t_flight_early = t_flights_dict[cg_id]['early']
+        t_flight_late = t_flights_dict[cg_id]['late']
+        h_early = headings_dict[cg_id]['early']
+        h_late = headings_dict[cg_id]['late']
+
+        x0s_all = np.concatenate([x_early, x_late])
+        t_flights_all = np.concatenate([t_flight_early, t_flight_late])
+        hs_all = np.concatenate([h_early, h_late], axis=0)
+
+        residuals_dict[cg_id] = {
+            'early': np.nan * np.zeros(h_early.shape),
+            'late': np.nan * np.zeros(h_late.shape),
+        }
+
+        # fit heading linear prediction from x0 at each time point
+        # and subtract from original heading
+        coefs_all = []
+        for t_step in range(ts_before + ts_after):
+
+            # get all headings for this time point
+            hs_t = hs_all[:, t_step]
+            residuals = np.nan * np.zeros(hs_t.shape)
+
+            # only use headings that exist
+            not_nan = ~np.isnan(hs_t)
+
+            # fit linear model
+            lm = linear_model.LinearRegression()
+            predictors = np.array([x0s_all, t_flights_all]).T
+            lm.fit(predictors[not_nan], hs_t[not_nan])
+
+            residuals[not_nan] = hs_t[not_nan] - lm.predict(predictors[not_nan])
+
+            coefs_all.append(lm.coef_.flatten())
+
+            assert np.all(np.isnan(residuals) == np.isnan(hs_t))
+
+            r_early, r_late = np.split(residuals, [len(x_early)])
+            residuals_dict[cg_id]['early'][:, t_step] = r_early
+            residuals_dict[cg_id]['late'][:, t_step] = r_late
+
+        coefs_all = np.array(coefs_all)
+        print('COEFS (X_0, T_FLIGHT) FOR CROSSING GROUP {}'.format(
+            CROSSING_GROUP_LABELS[cg_id]))
+        print('MEANS: ({0:.5f}, {1:.5f})'.format(*coefs_all.mean(axis=0)))
+        print('STDS: ({0:.5f}, {1:.5f})'.format(*coefs_all.std(axis=0)))
+
+        # loop through all time points and calculate p-value (ks-test)
+        # between early and late
+        p_vals = []
+
+        for t_step in range(ts_before + ts_after):
+
+            early_with_nans = residuals_dict[cg_id]['early'][:, t_step]
+            late_with_nans = residuals_dict[cg_id]['late'][:, t_step]
+
+            early_no_nans = early_with_nans[~np.isnan(early_with_nans)]
+            late_no_nans = late_with_nans[~np.isnan(late_with_nans)]
+
+            # calculate statistical significance
+            if ADJUST_NS:
+                n1 = min(n_trajs_dict[cg_id]['early'], len(early_no_nans))
+                n2 = min(n_trajs_dict[cg_id]['late'], len(late_no_nans))
+            else:
+                n1 = len(early_no_nans)
+                n2 = len(late_no_nans)
+            p_vals.append(stats.ttest_adjusted_ns(
+                early_no_nans, late_no_nans, n1, n2, equal_var=False)[1])
+
+        p_vals_dict[cg_id] = p_vals
+
+
+    ## MAKE PLOTS
+    t = np.arange(-ts_before, ts_after) * DT
+
+    # history-dependence
+    fig_size = (AX_SIZE[0] * AX_GRID[1], AX_SIZE[1] * AX_GRID[0])
+    fig_0, axs_0 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
+
+    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_0.flat):
+
+        print('MAKING PLOT FOR CG "{}"'.format(cg_id))
+
+        # get mean and sem of headings for early and late groups
+        handles = []
+
+        for label, color in EARLY_LATE_COLORS.items():
+            headings_mean = np.nanmean(residuals_dict[cg_id][label], axis=0)
+            headings_sem = stats.nansem(residuals_dict[cg_id][label], axis=0)
+
+            print('{} CROSSINGS FOR "{}" GROUP'.format(
+                len(residuals_dict[cg_id][label]), label))
+            print('MEAN HEADING = {}'.format(headings_mean.mean()))
+            print('SEM HEADING = {}'.format(headings_sem.mean()))
+
+            handles.append(ax.plot(
+                t, headings_mean, color=color, lw=2, label=label, zorder=1)[0])
+            ax.fill_between(
+                t, headings_mean - headings_sem, headings_mean + headings_sem,
+                color=color, alpha=ALPHA, zorder=1)
+
+        ax.set_ylim(-10, 10)
+        ax.set_xlabel('time since crossing (s)')
+
+        if SUBTRACT_INITIAL_HEADING: ax.set_ylabel('heading* (deg.)')
+        else: ax.set_ylabel('heading (deg.)')
+        ax.set_title(CROSSING_GROUP_LABELS[cg_id])
+
+        if cg_id == LEGEND_CROSSING_GROUP_ID:
+            ax.legend(handles=handles, loc='upper right')
+        set_fontsize(ax, FONT_SIZE)
+
+        # plot p-value
+        ax_twin = ax.twinx()
+
+        ax_twin.plot(t, p_vals_dict[cg_id], color=P_VAL_COLOR, lw=2, ls='--', zorder=0)
+        ax_twin.axhline(0.05, ls='-', lw=2, color='gray')
+
+        ax_twin.set_ylim(*P_VAL_Y_LIM)
+        ax_twin.set_ylabel('p-value (t-test)', fontsize=FONT_SIZE)
+
+        set_fontsize(ax_twin, FONT_SIZE)
+
+    fig_1, axs_1 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
+    cc = np.concatenate
+    colors = get_n_colors(CROSSING_NUMBER_MAX, colormap='jet')
+
+    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_1.flat):
+
+        # make scatter plot of x0s vs integrated headings vs crossing number
+        x_0s_all = cc([x_0s_dict[cg_id]['early'], x_0s_dict[cg_id]['late']])
+        t_flights_all = cc(
+            [t_flights_dict[cg_id]['early'], t_flights_dict[cg_id]['late']])
+        ys_all = cc([scatter_ys_dict[cg_id]['early'], scatter_ys_dict[cg_id]['late']])
+        cs_all = cc([crossing_ns_dict[cg_id]['early'], crossing_ns_dict[cg_id]['late']])
+
+        cs = np.array([colors[c-1] for c in cs_all])
+
+        hs = []
+
+        for c in sorted(np.unique(cs_all)):
+            label = 'cn = {}'.format(c)
+            mask = cs_all == c
+            h = ax.scatter(x_0s_all[mask], ys_all[mask],
+                s=20, c=cs[mask], lw=0, label=label)
+            hs.append(h)
+
+        # calculate partial correlation between crossing number and heading given x
+        not_nan = ~np.isnan(ys_all)
+        r, p = stats.partial_corr(
+            cs_all[not_nan], ys_all[not_nan],
+            controls=[x_0s_all[not_nan], t_flights_all[not_nan]])
+
+        ax.set_xlabel('x')
+        ax.set_ylabel(r'$\Delta$h_mean({}:{}) (deg)'.format(
+            *SCATTER_INTEGRATION_WINDOW))
+
+        title = CROSSING_GROUP_LABELS[cg_id] + \
+            ', R = {0:.2f}, P = {1:.3f}'.format(r, p)
+        ax.set_title(title)
+
+        ax.legend(handles=hs, loc='upper center', ncol=3)
+        set_fontsize(ax, 16)
+
+    return fig_0
+
+
+def per_trajectory_early_late_diff_analysis(
+        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, CROSSING_NUMBER_MAX,
+        MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
+        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
+        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
+        P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
+        FONT_SIZE):
+    """
+    Calculate the early vs. late difference on a per-trajectory basis,
+    i.e., directly comparing late crossings in a trajectory to early
+    crossings in the same trajectory.
+    """
+    ts_before = int(round(T_BEFORE / DT))
+    ts_after = int(round(T_AFTER / DT))
+
+    fig, axs_ = plt.subplots(
+        *AX_GRID, figsize=(15, 10), tight_layout=True, squeeze=False)
+    axs = {cg_id: ax for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_.flatten())}
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
+
+        cg = session.query(models.CrossingGroup).get(cg_id)
+
+        # get all crossing objects
+        crossings_all = session.query(models.Crossing).filter_by(
+            crossing_group=cg).filter(
+            models.Crossing.crossing_number <= CROSSING_NUMBER_MAX)
+
+        headings = []
+        x_0s = []
+        t_flights = []
+
+        crossing_types = []
+        traj_ids = []
+
+        # loop through crossings, appropriately adding them to data structure
+        for crossing in crossings_all:
+            # skip if exclusion criteria met
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN <= x_0 <= X_0_MAX): continue
+            if not (H_0_MIN <= h_0 <= H_0_MAX): continue
+
+            # figure out whether crossing is early or late
+            if crossing.crossing_number <= MAX_CROSSINGS_EARLY:
+                crossing_type = 'early'
+            else:
+                crossing_type = 'late'
+
+            # get headings
+            headings_ = crossing.timepoint_field(
+                session, 'heading_xyz', -ts_before, ts_after - 1,
+                'peak', 'peak', nan_pad=True)
+
+            if SUBTRACT_INITIAL_HEADING:
+                headings_ -= h_0
+
+            # store headings, x, and t_flight in large crossings list
+            headings.append(deepcopy(headings_))
+            x_0s.append(x_0)
+            t_flights.append(crossing.t_flight_peak)
+
+            crossing_types.append(crossing_type)
+            traj_ids.append(crossing.trajectory_id)
+
+        headings = np.array(headings)
+        x_0s = np.array(x_0s)
+        t_flights = np.array(t_flights)
+
+        print('CALCULATING HEADING RESIDUALS...')
+        # fit linear model for each time point
+        # and calculate residual headings
+        h_res = np.nan * np.zeros(headings.shape)
+
+        for t_step in range(ts_before + ts_after):
+
+            # get targets and predictors
+            targs = headings[:, t_step]
+            predictors = np.array([x_0s, t_flights]).T
+            not_nan = ~np.isnan(targs)
+
+            # fit model
+            lm = linear_model.LinearRegression(n_jobs=-1)
+            lm.fit(predictors[not_nan], targs[not_nan])
+
+            predictions = np.nan * np.zeros(len(targs))
+            predictions[not_nan] = lm.predict(predictors[not_nan])
+
+            h_res_ = targs - predictions
+            h_res[:, t_step] = h_res_
+
+        print('PRUNING UNPAIRED CROSSINGS...')
+        # create new dict with traj_ids as keys and sub-dicts as values
+        # containing lists of early vs. late crossings
+        crossings_dict = {}
+
+        for h_res_, crossing_type, traj_id in zip(
+                h_res, crossing_types, traj_ids):
+
+            # make new item in dict if trajectory id not already in it
+            if traj_id not in crossings_dict:
+                crossings_dict[traj_id] = {'early': [], 'late': []}
+
+            # store crossing heading residuals under correct traj and
+            # crossing type
+            crossings_dict[traj_id][crossing_type].append(h_res_)
+
+        # get pairs of pre-averaged crossing types
+        # in trajectories that include both valid early and late
+        # crossings
+        earlies = []
+        lates = []
+        for traj_id, crossing_sets in crossings_dict.items():
+
+            if crossing_sets['early'] and crossing_sets['late']:
+                # average over multiple early/multiple late encounters
+                early = np.nanmean(crossing_sets['early'], axis=0)
+                late = np.nanmean(crossing_sets['late'], axis=0)
+
+                earlies.append(early.copy())
+                lates.append(late.copy())
+
+        # calculate late-minus-early difference
+        earlies = np.array(earlies)
+        lates = np.array(lates)
+        diffs = lates - earlies
+
+        print('CROSSING GROUP: "{}"'.format(cg_id))
+        print('{} TRAJECTORIES INCLUDING VALID EARLY AND LATE CROSSINGS'.
+            format(len(diffs)))
+
+        # calculate p-values using paired t-test
+        p_vals = np.nan * np.zeros(diffs.shape[1])
+        for t_step in np.arange(ts_before + ts_after):
+            a = earlies[:, t_step]
+            b = lates[:, t_step]
+
+            not_nan_a = ~np.isnan(a)
+            not_nan_b = ~np.isnan(b)
+            not_nan = (not_nan_a * not_nan_b).astype(bool)
+
+            p_val = ttest_rel(a[not_nan], b[not_nan])[1]
+            p_vals[t_step] = p_val
+
+        # plot earlies and lates, overlaid with p-values
+        ts = np.arange(-ts_before, ts_after) / 100.
+        ax = axs[cg_id]
+
+        # early
+        h_1 = ax.plot(
+            ts, np.nanmean(earlies, axis=0), color='b', lw=2, label='early')[0]
+        ax.fill_between(
+            ts,
+            np.nanmean(earlies, axis=0) - stats.nansem(earlies, axis=0),
+            np.nanmean(earlies, axis=0) + stats.nansem(earlies, axis=0),
+            color='b', alpha=0.2)
+
+        # late
+        h_2 = ax.plot(
+            ts, np.nanmean(lates, axis=0), color='g', lw=2, label='late')[0]
+        ax.fill_between(
+            ts,
+            np.nanmean(lates, axis=0) - stats.nansem(lates, axis=0),
+            np.nanmean(lates, axis=0) + stats.nansem(lates, axis=0),
+            color='g', alpha=0.2)
+
+        # p-values
+        ax_twin = ax.twinx()
+        ax_twin.plot(ts, p_vals, lw=2, ls='--', color='k')
+        ax_twin.axhline(0.05, color='gray')
+
+        ax.set_xlabel('time since crossing (s)')
+        ax.set_ylabel('h*')
+        ax.legend(handles=[h_1, h_2], loc='best')
+
+        ax.set_xlim(ts[0], ts[-1])
+        set_fontsize(ax, 16)
+
+    return fig
+
+
+def early_crossings_vs_n_crossings(
+        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
+        MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
+        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
+        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
+        P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
+        FONT_SIZE):
+    """
+    Plot early crossings only as a function of how many crossings there
+    are in a trajectory in total. This tests the null hypothesis that there
+    are two types of flies: ones that perform only a few upwind oriented
+    crossings and ones that perform many crosswind oriented crossings.
+    """
+    ts_before = int(round(T_BEFORE / DT))
+    ts_after = int(round(T_AFTER / DT))
+
+    fig, axs_ = plt.subplots(
+        *AX_GRID, figsize=(15, 10), tight_layout=True, squeeze=False)
+    axs = {cg_id: ax for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_.flatten())}
+
+    for cg_id in CROSSING_GROUP_IDS:
+
+        print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
+
+        # get all early crossings that satisfy our criteria
+        crossings_all = session.query(models.Crossing).filter(
+            models.Crossing.crossing_group_id == cg_id,
+            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
+
+        #
+
+
+
+
 def infotaxis_history_dependence(
         WIND_TUNNEL_CG_IDS, INFOTAXIS_WIND_SPEED_CG_IDS, MAX_CROSSINGS,
         INFOTAXIS_HISTORY_DEPENDENCE_CG_IDS,
@@ -808,7 +1320,7 @@ def infotaxis_average_dt(INFOTAXIS_SIM_IDS):
 
 
 def hybrid_model_history_dependence(
-        SEED, EMPIRICAL_LATE_EARLY_DIFF, SURGE_CAST_FILE,
+        SEED, N_TRIALS, EMPIRICAL_LATE_EARLY_DIFF, SURGE_CAST_FILE,
         INFOTAXIS_CG_ID, INFOTAXIS_DT,
         X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
         H_0_MIN, H_0_MAX, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
@@ -818,6 +1330,7 @@ def hybrid_model_history_dependence(
     dependence as a function of the surge-cast vs. infotaxis mixture percent.
     """
     np.random.seed(SEED)
+    random.seed(SEED)
     from db_api.infotaxis import models as models_infotaxis
     from db_api.infotaxis.connect import session as session_infotaxis
 
@@ -899,91 +1412,104 @@ def hybrid_model_history_dependence(
             data_it['crossings_sorted'][cn] = []
         data_it['crossings_sorted'][cn].append(crossing_r.copy())
 
-    # pair each infotaxis crossing with a surge-cast crossing of the same
-    # crossing number
-    crossing_pairs = {}
-    for key in data_it['crossings_sorted']:
-        if key not in data_sc['crossings_sorted']:
-            continue
-        crossing_pairs[key] = []
-        for crossing_it in data_it['crossings_sorted'][key]:
-            crossing_sc = choice(data_sc['crossings_sorted'][key])
-            crossing_pairs[key].append((crossing_sc.copy(), crossing_it.copy()))
+    # loop over trials
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4), tight_layout=True)
+    x_bests = []
+    no_plot_yet = True
+    for trial_ctr in range(N_TRIALS):
 
-    # loop over xs and create set of hybrid crossings for each x
-    xs = np.linspace(0, 1, N_XS)
-    model_mean_diff_t_avgs = []
-    t_avg_mask = (T_AVG_DIFF_START <= ts) * (ts < T_AVG_DIFF_END)
-    t_avg_mask = t_avg_mask.astype(bool)
+        # pair each infotaxis crossing with a surge-cast crossing of the same
+        # crossing number
+        crossing_pairs = {}
+        for key in data_it['crossings_sorted']:
+            if key not in data_sc['crossings_sorted']:
+                continue
+            crossing_pairs[key] = []
+            for crossing_it in data_it['crossings_sorted'][key]:
+                crossing_sc = choice(data_sc['crossings_sorted'][key])
+                crossing_pairs[key].append((crossing_sc.copy(), crossing_it.copy()))
 
-    abs_data_model_diff_best = np.inf
+        # loop over xs and create set of hybrid crossings for each x
+        xs = np.linspace(0, 1, N_XS)
+        model_mean_diff_t_avgs = []
+        t_avg_mask = (T_AVG_DIFF_START <= ts) * (ts < T_AVG_DIFF_END)
+        t_avg_mask = t_avg_mask.astype(bool)
 
-    for x in xs:
-        # create hybrid crossing groups
-        crossings_sorted_hybrid = {}
-        for key, crossing_pairs_ in crossing_pairs.items():
-            crossings_sorted_hybrid[key] = []
-            for crossing_sc, crossing_it in crossing_pairs_:
-                crossing_hybrid = (x * crossing_sc) + ((1-x) * crossing_it)
-                crossings_sorted_hybrid[key].append(crossing_hybrid)
+        abs_data_model_diff_best = np.inf
 
-        # separate into early vs. late crossings
-        crossings_early = []
-        crossings_late = []
-        for key, crossing_set in crossings_sorted_hybrid.items():
-            if key < EARLY_LESS_THAN:
-                crossings_early.extend(crossing_set)
-            else:
-                crossings_late.extend(crossing_set)
+        for x in xs:
+            # create hybrid crossing groups
+            crossings_sorted_hybrid = {}
+            for key, crossing_pairs_ in crossing_pairs.items():
+                crossings_sorted_hybrid[key] = []
+                for crossing_sc, crossing_it in crossing_pairs_:
+                    crossing_hybrid = (x * crossing_sc) + ((1-x) * crossing_it)
+                    crossings_sorted_hybrid[key].append(crossing_hybrid)
 
-        # calculate history dependence
-        crossings_early = np.array(crossings_early)
-        crossings_late = np.array(crossings_late)
+            # separate into early vs. late crossings
+            crossings_early = []
+            crossings_late = []
+            for key, crossing_set in crossings_sorted_hybrid.items():
+                if key < EARLY_LESS_THAN:
+                    crossings_early.extend(crossing_set)
+                else:
+                    crossings_late.extend(crossing_set)
 
-        mean_early = np.nanmean(crossings_early, axis=0)
-        mean_late = np.nanmean(crossings_late, axis=0)
+            # calculate history dependence
+            crossings_early = np.array(crossings_early)
+            crossings_late = np.array(crossings_late)
 
-        mean_diff = mean_late - mean_early
-        mean_diff_t_avg = mean_diff[t_avg_mask].mean()
+            mean_early = np.nanmean(crossings_early, axis=0)
+            mean_late = np.nanmean(crossings_late, axis=0)
 
-        model_mean_diff_t_avgs.append(mean_diff_t_avg)
+            mean_diff = mean_late - mean_early
+            mean_diff_t_avg = mean_diff[t_avg_mask].mean()
 
-        abs_data_model_diff = np.abs(mean_diff_t_avg - EMPIRICAL_LATE_EARLY_DIFF)
-        if abs_data_model_diff < abs_data_model_diff_best:
-            x_best = x
-            abs_data_model_diff_best = abs_data_model_diff
-            crossings_early_best = crossings_early
-            crossings_late_best = crossings_late
+            model_mean_diff_t_avgs.append(mean_diff_t_avg)
 
-    model_mean_diff_t_avgs = np.array(model_mean_diff_t_avgs)
+            abs_data_model_diff = np.abs(mean_diff_t_avg - EMPIRICAL_LATE_EARLY_DIFF)
+            if abs_data_model_diff < abs_data_model_diff_best:
+                x_best = x
+                abs_data_model_diff_best = abs_data_model_diff
+                crossings_early_best = crossings_early
+                crossings_late_best = crossings_late
 
-    # plot the data-model difference as a function of x
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5), tight_layout=True)
-    axs[0].plot(100*xs, model_mean_diff_t_avgs, color='r', lw=2)
-    axs[0].axhline(EMPIRICAL_LATE_EARLY_DIFF, color='k', lw=2)
-    axs[0].set_xlabel('% surge-cast')
-    axs[0].set_ylabel('time-averaged\nlate mean minus early mean')
-    axs[0].legend(['hybrid model', 'data'])
+        model_mean_diff_t_avgs = np.array(model_mean_diff_t_avgs)
+        x_bests.append(x_best)
 
-    # plot early and late crossing groups
-    mean_early = np.nanmean(crossings_early_best, axis=0)
-    mean_late = np.nanmean(crossings_late_best, axis=0)
-    sem_early = stats.nansem(crossings_early_best, axis=0)
-    sem_late = stats.nansem(crossings_late_best, axis=0)
+        if np.abs(x_best - 0.8) < 0.001 and no_plot_yet:
+            no_plot_yet = False
+            # plot the data-model difference as a function of x
+            axs[0].plot(100*xs, model_mean_diff_t_avgs, color='r', lw=2)
+            axs[0].axhline(EMPIRICAL_LATE_EARLY_DIFF, color='k', lw=2)
+            axs[0].set_xlabel('% surge-cast')
+            axs[0].set_ylabel('time-averaged\nlate mean minus early mean')
+            axs[0].legend(['hybrid model', 'data'])
 
-    axs[1].plot(ts, mean_early, color='b', lw=2)
-    axs[1].plot(ts, mean_late, color='g', lw=2)
-    axs[1].fill_between(
-        ts, mean_early-sem_early, mean_early+sem_early,
-        color='b', alpha=0.2)
-    axs[1].fill_between(
-        ts, mean_late-sem_late, mean_late+sem_late,
-        color='g', alpha=0.2)
-    axs[1].set_xlabel('time since crossing (s)')
-    axs[1].set_ylabel('change in heading (deg)')
-    axs[1].set_title(
-        ('history dependence for \n{0:.1f}% surge-cast, '
-         '{1:.1f}% infotaxis'.format(100*x_best, 100*(1-x_best))))
+            # plot early and late crossing groups
+            mean_early = np.nanmean(crossings_early_best, axis=0)
+            mean_late = np.nanmean(crossings_late_best, axis=0)
+            sem_early = stats.nansem(crossings_early_best, axis=0)
+            sem_late = stats.nansem(crossings_late_best, axis=0)
+
+            axs[1].plot(ts, mean_early, color='b', lw=2)
+            axs[1].plot(ts, mean_late, color='g', lw=2)
+            axs[1].fill_between(
+                ts, mean_early-sem_early, mean_early+sem_early,
+                color='b', alpha=0.2)
+            axs[1].fill_between(
+                ts, mean_late-sem_late, mean_late+sem_late,
+                color='g', alpha=0.2)
+            axs[1].set_xlabel('time since crossing (s)')
+            axs[1].set_ylabel('change in heading (deg)')
+            axs[1].set_title(
+                ('history dependence for \n{0:.1f}% surge-cast, '
+                 '{1:.1f}% infotaxis'.format(100*x_best, 100*(1-x_best))))
+
+    axs[2].hist(100 * np.array(x_bests), bins=20)
+    axs[2].set_xlabel('best % surge-cast')
+    axs[2].set_ylabel('trials')
+    axs[2].set_title('mean = {}'.format(np.mean(x_bests)))
 
     for ax in axs:
         set_fontsize(ax, 16)
