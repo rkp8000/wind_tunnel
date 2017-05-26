@@ -682,13 +682,16 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
 
     for cg_id in CROSSING_GROUP_IDS:
 
-        # get crossing group
-        crossing_group = session.query(models.CrossingGroup).get(cg_id)
-
         # get early and late crossings
         crossings_dict = {}
-        crossings_all = session.query(models.Crossing).filter_by(
-            crossing_group=crossing_group)
+        crossings_all = session.query(models.Crossing).join(
+            models.CrossingFeatureSetBasic).filter(
+            models.Crossing.crossing_group_id == cg_id,
+            models.CrossingFeatureSetBasic.position_x_peak.between(
+                X_0_MIN, X_0_MAX),
+            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+                H_0_MIN, H_0_MAX))
+
         crossings_dict['early'] = crossings_all.filter(
             models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
         crossings_dict['late'] = crossings_all.filter(
@@ -726,11 +729,6 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
                 # throw away crossings that do not meet trigger criteria
                 x_0 = getattr(
                     crossing.feature_set_basic, 'position_x_{}'.format('peak'))
-                h_0 = getattr(
-                    crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
-
-                if not (X_0_MIN <= x_0 <= X_0_MAX): continue
-                if not (H_0_MIN <= h_0 <= H_0_MAX): continue
 
                 # store x_0 (uw/dw position)
                 x_0s.append(x_0)
@@ -1117,6 +1115,7 @@ def per_trajectory_early_late_diff_analysis(
 
         ax.set_xlabel('time since crossing (s)')
         ax.set_ylabel('h*')
+        ax.set_title(CROSSING_GROUP_LABELS[cg_id])
         ax.legend(handles=[h_1, h_2], loc='best')
 
         ax.set_xlim(ts[0], ts[-1])
@@ -1129,10 +1128,7 @@ def early_crossings_vs_n_crossings(
         CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
-        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
-        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
-        P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
-        FONT_SIZE):
+        T_BEFORE, T_AFTER, AX_GRID):
     """
     Plot early crossings only as a function of how many crossings there
     are in a trajectory in total. This tests the null hypothesis that there
@@ -1151,13 +1147,145 @@ def early_crossings_vs_n_crossings(
         print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
 
         # get all early crossings that satisfy our criteria
-        crossings_all = session.query(models.Crossing).filter(
+        crossings_early = session.query(models.Crossing).join(
+            models.CrossingFeatureSetBasic).filter(
             models.Crossing.crossing_group_id == cg_id,
-            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
+            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY,
+            models.CrossingFeatureSetBasic.position_x_peak.between(
+                X_0_MIN, X_0_MAX),
+            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+                H_0_MIN, H_0_MAX))
 
-        #
+        # store headings, x_0, t_flight, and total number of crossings in
+        # trajectory for each early crossing
+        headings = np.nan * np.zeros(
+            (crossings_early.count(), ts_before + ts_after))
+        x_0s = np.nan * np.zeros(crossings_early.count())
+        t_flights = np.nan * np.zeros(crossings_early.count())
+        n_crossings_traj = -1 * np.zeros(crossings_early.count(), dtype=int)
+        traj_ids = []
 
+        for ctr, crossing in enumerate(crossings_early):
+            # get headings
+            headings_ = crossing.timepoint_field(
+                session, 'heading_xyz', -ts_before, ts_after-1,
+                'peak', 'peak', nan_pad=True)
 
+            if SUBTRACT_INITIAL_HEADING:
+                headings_ -= crossing.feature_set_basic.heading_xyz_peak
+
+            # get total number of crossings in the trajectory this
+            # crossing came from
+            traj_id = crossing.trajectory_id
+
+            n_crossings_traj_ = session.query(models.Crossing).filter(
+                models.Crossing.crossing_group_id == cg_id,
+                models.Crossing.trajectory_id == traj_id).count()
+
+            # store headings, x pos, t_flight, and n crossings in traj
+            headings[ctr] = deepcopy(headings_)
+            x_0s[ctr] = crossing.feature_set_basic.position_x_peak
+            t_flights[ctr] = crossing.t_flight_peak
+            n_crossings_traj[ctr] = n_crossings_traj_
+
+            traj_ids.append(traj_id)
+
+        traj_ids = np.array(traj_ids)
+
+        print('CALCULATING HEADING RESIDUALS...')
+        h_res = np.nan * np.zeros(headings.shape)
+
+        for t_step in range(ts_before + ts_after):
+
+            # get targets (headings) and predictors (x_0 and t_flight)
+            targs = headings[:, t_step]
+            predictors = np.array([x_0s, t_flights]).T
+            not_nan = ~np.isnan(targs)
+
+            # fit model
+            lm = linear_model.LinearRegression(n_jobs=-1)
+            lm.fit(predictors[not_nan], targs[not_nan])
+
+            predictions = np.nan * np.zeros(len(targs))
+            predictions[not_nan] = lm.predict(predictors[not_nan])
+
+            h_res_ = targs - predictions
+            h_res[:, t_step] = h_res_
+
+        # sort heading time-series into groups according to total crossings
+        # in trajectory
+        traj_short_mask = n_crossings_traj <= MAX_CROSSINGS_EARLY
+        traj_long_mask = n_crossings_traj > MAX_CROSSINGS_EARLY
+
+        h_res_traj_short = h_res[traj_short_mask]
+        h_res_traj_long = h_res[traj_long_mask]
+
+        print('{} EARLY CROSSINGS IN SHORT TRAJECTORY GROUP'.format(
+            len(h_res_traj_short)))
+        print('{} EARLY CROSSINGS IN LONG TRAJECTORY GROUP'.format(
+            len(h_res_traj_long)))
+
+        # get p-values using adjusted t-test
+        p_vals = np.nan * np.zeros(h_res_traj_short.shape[1])
+        for t_step in np.arange(ts_before + ts_after):
+            a = h_res_traj_short[:, t_step]
+            b = h_res_traj_long[:, t_step]
+
+            not_nan_a = ~np.isnan(a)
+            not_nan_b = ~np.isnan(b)
+
+            n1 = len(np.unique(traj_ids[traj_short_mask][not_nan_a]))
+            n2 = len(np.unique(traj_ids[traj_long_mask][not_nan_b]))
+
+            p_val = stats.ttest_adjusted_ns(
+                a[not_nan_a], b[not_nan_b], n1, n2)[1]
+            p_vals[t_step] = p_val
+
+        # make plots
+        ts = np.arange(-ts_before, ts_after) / 100.
+        ax = axs[cg_id]
+        ax_twin = ax.twinx()
+
+        # trajs with few crossings
+        h_1 = ax.plot(
+            ts, np.nanmean(h_res_traj_short, axis=0),
+            color='r', lw=2, label='few')[0]
+        ax.fill_between(
+            ts,
+            np.nanmean(h_res_traj_short, axis=0)
+                - stats.nansem(h_res_traj_short, axis=0),
+            np.nanmean(h_res_traj_short, axis=0)
+                + stats.nansem(h_res_traj_short, axis=0),
+            color='r', alpha=0.2)
+
+        # trajs with many crossings
+        h_2 = ax.plot(
+            ts, np.nanmean(h_res_traj_long, axis=0),
+            color='c', lw=2, label='many')[0]
+        ax.fill_between(
+            ts,
+            np.nanmean(h_res_traj_long, axis=0)
+                - stats.nansem(h_res_traj_long, axis=0),
+            np.nanmean(h_res_traj_long, axis=0)
+                + stats.nansem(h_res_traj_long, axis=0),
+            color='c', alpha=0.2)
+
+        ax.set_xlabel('time since crossing (s)')
+        ax.set_ylabel('h*')
+        ax.set_title(CROSSING_GROUP_LABELS[cg_id])
+        ax.legend(handles=[h_1, h_2])
+
+        ax.set_xlim(ts[0], ts[-1])
+
+        # plot p-values
+        ax_twin.plot(ts, p_vals, color='k', lw=2, ls='--')
+        ax_twin.axhline(0.05, color='gray', lw=2)
+        ax_twin.set_ylabel('p-value (t-test)')
+
+        for ax_ in [ax, ax_twin]:
+            set_fontsize(ax_, 16)
+
+    return fig
 
 
 def infotaxis_history_dependence(
