@@ -964,12 +964,15 @@ def per_trajectory_early_late_diff_analysis(
 
         print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
 
-        cg = session.query(models.CrossingGroup).get(cg_id)
-
         # get all crossing objects
-        crossings_all = session.query(models.Crossing).filter_by(
-            crossing_group=cg).filter(
-            models.Crossing.crossing_number <= CROSSING_NUMBER_MAX)
+        crossings_all = session.query(models.Crossing).join(
+            models.CrossingFeatureSetBasic).filter(
+            models.Crossing.crossing_group_id == cg_id,
+            models.Crossing.crossing_number <= CROSSING_NUMBER_MAX,
+            models.CrossingFeatureSetBasic.position_x_peak.between(
+                X_0_MIN, X_0_MAX),
+            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+                H_0_MIN, H_0_MAX))
 
         headings = []
         x_0s = []
@@ -983,9 +986,6 @@ def per_trajectory_early_late_diff_analysis(
             # skip if exclusion criteria met
             x_0 = crossing.feature_set_basic.position_x_peak
             h_0 = crossing.feature_set_basic.heading_xyz_peak
-
-            if not (X_0_MIN <= x_0 <= X_0_MAX): continue
-            if not (H_0_MIN <= h_0 <= H_0_MAX): continue
 
             # figure out whether crossing is early or late
             if crossing.crossing_number <= MAX_CROSSINGS_EARLY:
