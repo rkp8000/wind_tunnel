@@ -327,7 +327,6 @@ def example_trajectory_surging_with_plume(
     return fig
 
 
-
 def optimize_model_params(
         SEED,
         DURATION, DT, BOUNDS,
@@ -346,28 +345,22 @@ def optimize_model_params(
     file_name = '{}_{}_odor_{}.npy'.format(SAVE_FILE_PREFIX, EXPERIMENT, ODOR_STATE)
 
     if os.path.isfile(file_name):
-
         empirical = np.load(file_name)[0]
-
     else:
-
         print('extracting time points from data')
 
         # get all trajectories
-
         trajs = session.query(models.Trajectory).filter_by(
             experiment_id=EXPERIMENT, odor_state=ODOR_STATE, clean=True).\
             limit(MAX_TRAJS_EMPIRICAL).all()
 
         # get all speeds and angular velocities
-
         cc = np.concatenate
         speeds_empirical = cc([traj.velocities_a(session) for traj in trajs])
         ws_empirical = cc([traj.angular_velocities_a(session) for traj in trajs])
         ys_empirical = cc([traj.timepoint_field(session, 'position_y') for traj in trajs])
 
         # sample a set of speeds and ws
-
         np.random.seed(SEED)
 
         speeds_empirical = np.random.choice(speeds_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
@@ -400,10 +393,10 @@ def optimize_model_params(
 
         # make agent and trajectory
 
-        ag = CenterlineInferringAgent(
+        ag = SurgingAgent(
             tau=p[0], noise=p[1], bias=p[2], threshold=np.inf,
-            hit_trigger='peak', hit_influence=0,
-            k_0=np.eye(2), k_s=np.eye(2), tau_memory=1, bounds=BOUNDS)
+            hit_trigger='peak', surge_amp=0, tau_surge=np.inf,
+            bounds=BOUNDS)
 
         traj = ag.track(pl, start_pos, DURATION, DT)
 
@@ -427,11 +420,9 @@ def optimize_model_params(
         return val
 
     # optimize it
-
     p_best = optimize.fmin(optim_fun, np.array(INITIAL_PARAMS), maxiter=MAX_ITERS)
 
     # generate one final trajectory
-
     np.random.seed(SEED)
 
     start_pos = np.array([
@@ -961,14 +952,14 @@ def crossing_triggered_headings_early_late_surge(
                 crossing[ts_before:ts_before + ts_after_crossing] = \
                     traj['headings'][peak_time:end]
 
-            crossings_save.append((ctr + 1, crossing.copy()))
-
             if SUBTRACT_PEAK_HEADING:
                 crossing -= crossing[ts_before]
             if ctr + 1 < EARLY_LESS_THAN:
                 crossings_early.append(crossing)
             else:
                 crossings_late.append(crossing)
+
+            crossings_save.append((ctr + 1, crossing.copy()))
 
     # save crossings
     save_dict_full = {

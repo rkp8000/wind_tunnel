@@ -17,13 +17,14 @@ from db_api import models
 from db_api.connect import session
 
 from axis_tools import set_fontsize
-from plot import get_n_colors
+from kinematics import heading as calc_heading
+from plot import get_n_colors, set_font_size
 import simple_models
 from simple_tracking import GaussianLaminarPlume
 from simple_tracking import CenterlineInferringAgent, SurgingAgent
 import stats
 import time_series_classifier as tsc
-from time_series import get_ks_p_vals
+from time_series import get_ks_p_vals, segment_by_threshold
 
 from experimental_constants import DT, PLUME_PARAMS_DICT
 
@@ -450,7 +451,7 @@ def early_vs_late_heading_timecourse(
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
         T_BEFORE, T_AFTER, T_AVG_DIFF_START, T_AVG_DIFF_END,
-        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
+        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA, Y_LIM,
         P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
         X_0_BINS, FONT_SIZE, SAVE_FILE_PREFIX):
     """
@@ -549,16 +550,7 @@ def early_vs_late_heading_timecourse(
         save_file = '{}_{}.npy'.format(SAVE_FILE_PREFIX, cg_id)
         np.save(save_file, np.array([save_data]))
 
-        # calculate time-averaged difference in means between the two groups
-        ts_start = ts_before + int(T_AVG_DIFF_START / DT)
-        ts_end = ts_before + int(T_AVG_DIFF_END / DT)
-        diff_means_time_avg = np.mean(save_data['late'][ts_start:ts_end] \
-            - save_data['early'][ts_start:ts_end])
-
-        print('Time-averaged late mean - early mean for crossing group')
-        print(cg_id)
-        print('= {}'.format(diff_means_time_avg))
-
+        ax.set_ylim(Y_LIM)
         ax.set_xlabel('time since crossing (s)')
 
         if SUBTRACT_INITIAL_HEADING:
@@ -573,33 +565,388 @@ def early_vs_late_heading_timecourse(
 
         set_fontsize(ax, FONT_SIZE)
 
-        # plot p-value
-        p_vals = np.array(p_vals_dict[cg_id])
+    return fig
 
-        ## get y-position to plot p-vals at
-        y_min, y_max = ax.get_ylim()
-        y_range = y_max - y_min
 
-        y_p_vals = (y_min + 0.02*y_range) * np.ones(len(p_vals))
-        y_p_vals_10 = y_p_vals.copy()
-        y_p_vals_05 = y_p_vals.copy()
-        y_p_vals_01 = y_p_vals.copy()
-        y_p_vals_10[p_vals > 0.1] = np.nan
-        y_p_vals_05[p_vals > 0.05] = np.nan
-        y_p_vals_01[p_vals > 0.01] = np.nan
+def early_late_heading_timecourse_surge_cast(
+        SEED, N_TRAJS, DURATION, DT, BOUNDS,
+        TAU, NOISE, BIAS, AGENT_THRESHOLD,
+        SURGE_AMP, TAU_SURGE,
+        PL_CONC, PL_MEAN, PL_STD,
+        ANALYSIS_THRESHOLD,
+        H_0_MIN, H_0_MAX,
+        X_0_MIN, X_0_MAX,
+        MAX_CROSSINGS_EARLY,
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER,
+        Y_LIM, SAVE_FILE):
+    """
+    Fly several agents through a simulated plume and plot their plume-crossing-triggered
+    headings.
+    """
 
-        ax.plot(t, y_p_vals_10, lw=4, color='gray')
-        ax.plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
-        ax.plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
+    # build plume and agent
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    ag = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
+        hit_trigger='peak', surge_amp=SURGE_AMP, tau_surge=TAU_SURGE,
+        bounds=BOUNDS)
+
+    # GENERATE TRAJECTORIES
+    np.random.seed(SEED)
+
+    trajs = []
+
+    for _ in range(N_TRAJS):
+
+        # choose random start position
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
+
+        # make trajectory
+        traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
+        traj['headings'] = calc_heading(traj['vs'])[:, 2]
+        trajs.append(traj)
+
+    # ANALYZE TRAJECTORIES
+    n_crossings = []
+
+    # collect early and late crossings
+    crossings_early = []
+    crossings_late = []
+
+    crossings_save = []
+
+    ts_before = int(T_BEFORE / DT)
+    ts_after = int(T_AFTER / DT)
+
+    for traj in trajs:
+
+        starts, onsets, peak_times, offsets, ends = \
+            segment_by_threshold(traj['odors'], ANALYSIS_THRESHOLD)[0].T
+
+        n_crossings.append(len(peak_times))
+
+        for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+
+            # skip crossings that don't meet inclusion criteria
+            if not (H_0_MIN <= traj['headings'][peak_time] <= H_0_MAX):
+                continue
+            if not (X_0_MIN <= traj['xs'][peak_time, 0] <= X_0_MAX):
+                continue
+
+            crossing = np.nan * np.zeros((ts_before + ts_after,))
+
+            ts_before_crossing = peak_time - start
+            ts_after_crossing = end - peak_time
+
+            if ts_before_crossing >= ts_before:
+                crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+            else:
+                crossing[ts_before - ts_before_crossing:ts_before] = \
+                    traj['headings'][start:peak_time]
+
+            if ts_after_crossing >= ts_after:
+                crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+            else:
+                crossing[ts_before:ts_before + ts_after_crossing] = \
+                    traj['headings'][peak_time:end]
+
+            if SUBTRACT_PEAK_HEADING:
+                crossing -= crossing[ts_before]
+            if ctr + 1 <= MAX_CROSSINGS_EARLY:
+                crossings_early.append(crossing)
+            else:
+                crossings_late.append(crossing)
+
+            crossings_save.append((ctr + 1, crossing.copy()))
+
+    # save crossings
+    save_dict_full = {
+        'ts_before': ts_before,
+        'ts_after': ts_after,
+        'crossings': crossings_save
+    }
+    save_file = SAVE_FILE + '_full.npy'
+    np.save(save_file, np.array([save_dict_full]))
+
+    n_crossings = np.array(n_crossings)
+
+    crossings_early = np.array(crossings_early)
+    crossings_late = np.array(crossings_late)
+
+    t = np.arange(-ts_before, ts_after) * DT
+
+    h_mean_early = np.nanmean(crossings_early, axis=0)
+    h_sem_early = stats.nansem(crossings_early, axis=0)
+
+    h_mean_late = np.nanmean(crossings_late, axis=0)
+    h_sem_late = stats.nansem(crossings_late, axis=0)
+
+    save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
+    np.save(SAVE_FILE + '.npy', np.array([save_data]))
+
+    fig, axs = plt.figure(figsize=(14, 15), tight_layout=True), []
+
+    axs.append(fig.add_subplot(3, 2, 1))
+    axs.append(fig.add_subplot(3, 2, 2))
+
+    handles = []
+
+    try:
+        handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
+        axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
+            color='b', alpha=0.2)
+    except:
+        pass
+
+    try:
+        handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
+        axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
+            color='g', alpha=0.2)
+    except:
+        pass
+
+    axs[0].set_ylim(Y_LIM)
+    axs[0].set_xlabel('time since crossing (s)')
+    axs[0].set_title('surge-cast')
+
+    if SUBTRACT_PEAK_HEADING:
+        axs[0].set_ylabel('$\Delta$ heading (deg)')
+    else:
+        axs[0].set_ylabel('heading (deg)')
+
+    axs[0].legend(handles=handles, fontsize=16)
+
+    bin_min = -0.5
+    bin_max = n_crossings.max() + 0.5
+
+    bins = np.linspace(bin_min, bin_max, bin_max - bin_min + 1, endpoint=True)
+
+    axs[1].hist(n_crossings, bins=bins, lw=0, normed=True)
+    axs[1].set_xlim(bin_min, bin_max)
+
+    axs[1].set_xlabel('number of crossings')
+    axs[1].set_ylabel('proportion of\ntrajectories')
+
+    axs.append(fig.add_subplot(3, 1, 2))
+
+    axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
+    axs[2].axhline(0, color='gray', ls='--')
+
+    axs[2].set_xlabel('x (m)')
+    axs[2].set_ylabel('y (m)')
+
+    axs.append(fig.add_subplot(3, 1, 3))
+
+    all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
+    x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
+    y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
+
+    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
+
+    for ax in axs:
+
+        set_font_size(ax, 20)
 
     return fig
 
 
-def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
+def early_late_heading_timecourse_centerline_inferring(
+        SEED, N_TRAJS, DURATION, DT,
+        TAU, NOISE, BIAS, AGENT_THRESHOLD,
+        HIT_INFLUENCE, TAU_MEMORY,
+        K_0, K_S, BOUNDS,
+        PL_CONC, PL_MEAN, PL_STD,
+        ANALYSIS_THRESHOLD,
+        H_0_MIN, H_0_MAX,
+        X_0_MIN, X_0_MAX,
+        MAX_CROSSINGS_EARLY,
+        SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER, Y_LIM, SAVE_FILE):
+    """
+    Fly several agents through a simulated plume and plot their plume-crossing-triggered
+    headings.
+    """
+
+    # build plume and agent
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
+    ag = CenterlineInferringAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=AGENT_THRESHOLD,
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
+
+    # GENERATE TRAJECTORIES
+    np.random.seed(SEED)
+    trajs = []
+
+    for _ in range(N_TRAJS):
+
+        # choose random start position
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
+
+        # make trajectory
+        traj = ag.track(plume=pl, start_pos=start_pos, duration=DURATION, dt=DT)
+        traj['headings'] = calc_heading(traj['vs'])[:, 2]
+        trajs.append(traj)
+
+    # ANALYZE TRAJECTORIES
+
+    n_crossings = []
+
+    # collect early and late crossings
+
+    crossings_early = []
+    crossings_late = []
+
+    ts_before = int(T_BEFORE / DT)
+    ts_after = int(T_AFTER / DT)
+
+    for traj in trajs:
+
+        starts, onsets, peak_times, offsets, ends = \
+            segment_by_threshold(traj['odors'], ANALYSIS_THRESHOLD)[0].T
+
+        n_crossings.append(len(peak_times))
+
+        for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+
+            if not (H_0_MIN <= traj['headings'][peak_time] < H_0_MAX):
+                continue
+
+            if not (X_0_MIN <= traj['xs'][peak_time, 0] < X_0_MAX):
+                continue
+
+            crossing = np.nan * np.zeros((ts_before + ts_after,))
+
+            ts_before_crossing = peak_time - start
+            ts_after_crossing = end - peak_time
+
+            if ts_before_crossing >= ts_before:
+                crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+            else:
+                crossing[ts_before - ts_before_crossing:ts_before] = \
+                    traj['headings'][start:peak_time]
+
+            if ts_after_crossing >= ts_after:
+                crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+            else:
+                crossing[ts_before:ts_before + ts_after_crossing] = \
+                    traj['headings'][peak_time:end]
+
+            if SUBTRACT_PEAK_HEADING:
+                crossing -= crossing[ts_before]
+            if ctr + 1 <= MAX_CROSSINGS_EARLY:
+                crossings_early.append(crossing)
+            else:
+                crossings_late.append(crossing)
+
+    n_crossings = np.array(n_crossings)
+
+    crossings_early = np.array(crossings_early)
+    crossings_late = np.array(crossings_late)
+
+    t = np.arange(-ts_before, ts_after) * DT
+
+    h_mean_early = np.nanmean(crossings_early, axis=0)
+    h_sem_early = stats.nansem(crossings_early, axis=0)
+
+    h_mean_late = np.nanmean(crossings_late, axis=0)
+    h_sem_late = stats.nansem(crossings_late, axis=0)
+
+    save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
+    np.save(SAVE_FILE, np.array([save_data]))
+
+    fig, axs = plt.figure(figsize=(14, 15), tight_layout=True), []
+
+    axs.append(fig.add_subplot(3, 2, 1))
+    axs.append(fig.add_subplot(3, 2, 2))
+
+    handles = []
+
+    try:
+
+        handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
+        axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
+            color='b', alpha=0.2)
+
+    except:
+
+        pass
+
+    try:
+
+        handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
+        axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
+            color='g', alpha=0.2)
+
+    except:
+
+        pass
+
+    axs[0].set_ylim(Y_LIM)
+    axs[0].set_xlabel('time since crossing (s)')
+    axs[0].set_title('centerline-inferring')
+
+    if SUBTRACT_PEAK_HEADING:
+        axs[0].set_ylabel('$\Delta$ heading (deg)')
+    else:
+        axs[0].set_ylabel('heading (deg)')
+
+    bin_min = -0.5
+    bin_max = n_crossings.max() + 0.5
+
+    bins = np.linspace(bin_min, bin_max, bin_max - bin_min + 1, endpoint=True)
+
+    axs[1].hist(n_crossings, bins=bins, lw=0, normed=True)
+    axs[1].set_xlim(bin_min, bin_max)
+
+    axs[1].set_xlabel('number of crossings')
+    axs[1].set_ylabel('proportion of\ntrajectories')
+
+    axs.append(fig.add_subplot(3, 1, 2))
+
+    axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
+    axs[2].axhline(0, color='gray', ls='--')
+
+    axs[2].set_xlabel('x (m)')
+    axs[2].set_ylabel('y (m)')
+
+    axs.append(fig.add_subplot(3, 1, 3))
+
+    all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
+    x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
+    y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
+
+    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
+
+    for ax in axs:
+        set_font_size(ax, 20)
+
+    return fig
+
+
+def early_vs_late_heading_timecourse_given_x0_and_t_flight(
         CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, CROSSING_NUMBER_MAX,
         MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
-        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
+        T_BEFORE, T_AFTER, ADJUST_NS,
         AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
         P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
         FONT_SIZE):
@@ -611,7 +958,6 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
     # convert times to time steps
     ts_before = int(round(T_BEFORE / DT))
     ts_after = int(round(T_AFTER / DT))
-    scatter_ts = [ts_before + int(round(t / DT)) for t in SCATTER_INTEGRATION_WINDOW]
 
     # loop over crossing groups
     x_0s_dict = {}
@@ -696,8 +1042,6 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
                 # store headings
                 headings.append(temp)
 
-                # calculate mean heading over integration window for scatter plot
-                scatter_ys.append(np.nanmean(temp[scatter_ts[0]:scatter_ts[1]]))
                 crossing_ns.append(crossing.crossing_number)
 
             x_0s_dict[cg_id][label] = np.array(x_0s).copy()
@@ -793,9 +1137,9 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
 
     # history-dependence
     fig_size = (AX_SIZE[0] * AX_GRID[1], AX_SIZE[1] * AX_GRID[0])
-    fig_0, axs_0 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
+    fig, axs = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
 
-    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_0.flat):
+    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs.flat):
 
         print('MAKING PLOT FOR CG "{}"'.format(cg_id))
 
@@ -839,397 +1183,6 @@ def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
 
         set_fontsize(ax_twin, FONT_SIZE)
 
-    fig_1, axs_1 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
-    cc = np.concatenate
-    colors = get_n_colors(CROSSING_NUMBER_MAX, colormap='jet')
-
-    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_1.flat):
-
-        # make scatter plot of x0s vs integrated headings vs crossing number
-        x_0s_all = cc([x_0s_dict[cg_id]['early'], x_0s_dict[cg_id]['late']])
-        t_flights_all = cc(
-            [t_flights_dict[cg_id]['early'], t_flights_dict[cg_id]['late']])
-        ys_all = cc([scatter_ys_dict[cg_id]['early'], scatter_ys_dict[cg_id]['late']])
-        cs_all = cc([crossing_ns_dict[cg_id]['early'], crossing_ns_dict[cg_id]['late']])
-
-        cs = np.array([colors[c-1] for c in cs_all])
-
-        hs = []
-
-        for c in sorted(np.unique(cs_all)):
-            label = 'cn = {}'.format(c)
-            mask = cs_all == c
-            h = ax.scatter(x_0s_all[mask], ys_all[mask],
-                s=20, c=cs[mask], lw=0, label=label)
-            hs.append(h)
-
-        # calculate partial correlation between crossing number and heading given x
-        not_nan = ~np.isnan(ys_all)
-        r, p = stats.partial_corr(
-            cs_all[not_nan], ys_all[not_nan],
-            controls=[x_0s_all[not_nan], t_flights_all[not_nan]])
-
-        ax.set_xlabel('x')
-        ax.set_ylabel(r'$\Delta$h_mean({}:{}) (deg)'.format(
-            *SCATTER_INTEGRATION_WINDOW))
-
-        title = CROSSING_GROUP_LABELS[cg_id] + \
-            ', R = {0:.2f}, P = {1:.3f}'.format(r, p)
-        ax.set_title(title)
-
-        ax.legend(handles=hs, loc='upper center', ncol=3)
-        set_fontsize(ax, 16)
-
-    return fig_0
-
-
-def per_trajectory_early_late_diff_analysis(
-        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
-        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, CROSSING_NUMBER_MAX,
-        MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
-        T_BEFORE, T_AFTER, ADJUST_NS, SCATTER_INTEGRATION_WINDOW,
-        AX_SIZE, AX_GRID, EARLY_LATE_COLORS, ALPHA,
-        P_VAL_COLOR, P_VAL_Y_LIM, LEGEND_CROSSING_GROUP_ID,
-        FONT_SIZE):
-    """
-    Calculate the early vs. late difference on a per-trajectory basis,
-    i.e., directly comparing late crossings in a trajectory to early
-    crossings in the same trajectory.
-    """
-    ts_before = int(round(T_BEFORE / DT))
-    ts_after = int(round(T_AFTER / DT))
-
-    fig, axs_ = plt.subplots(
-        *AX_GRID, figsize=(15, 10), tight_layout=True, squeeze=False)
-    axs = {cg_id: ax for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_.flatten())}
-
-    for cg_id in CROSSING_GROUP_IDS:
-
-        print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
-
-        # get all crossing objects
-        crossings_all = session.query(models.Crossing).join(
-            models.CrossingFeatureSetBasic).filter(
-            models.Crossing.crossing_group_id == cg_id,
-            models.Crossing.crossing_number <= CROSSING_NUMBER_MAX,
-            models.CrossingFeatureSetBasic.position_x_peak.between(
-                X_0_MIN, X_0_MAX),
-            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
-                H_0_MIN, H_0_MAX))
-
-        headings = []
-        x_0s = []
-        t_flights = []
-
-        crossing_types = []
-        traj_ids = []
-
-        # loop through crossings, appropriately adding them to data structure
-        for crossing in crossings_all:
-            # skip if exclusion criteria met
-            x_0 = crossing.feature_set_basic.position_x_peak
-            h_0 = crossing.feature_set_basic.heading_xyz_peak
-
-            # figure out whether crossing is early or late
-            if crossing.crossing_number <= MAX_CROSSINGS_EARLY:
-                crossing_type = 'early'
-            else:
-                crossing_type = 'late'
-
-            # get headings
-            headings_ = crossing.timepoint_field(
-                session, 'heading_xyz', -ts_before, ts_after - 1,
-                'peak', 'peak', nan_pad=True)
-
-            if SUBTRACT_INITIAL_HEADING:
-                headings_ -= h_0
-
-            # store headings, x, and t_flight in large crossings list
-            headings.append(deepcopy(headings_))
-            x_0s.append(x_0)
-            t_flights.append(crossing.t_flight_peak)
-
-            crossing_types.append(crossing_type)
-            traj_ids.append(crossing.trajectory_id)
-
-        headings = np.array(headings)
-        x_0s = np.array(x_0s)
-        t_flights = np.array(t_flights)
-
-        print('CALCULATING HEADING RESIDUALS...')
-        # fit linear model for each time point
-        # and calculate residual headings
-        h_res = np.nan * np.zeros(headings.shape)
-
-        for t_step in range(ts_before + ts_after):
-
-            # get targets and predictors
-            targs = headings[:, t_step]
-            predictors = np.array([x_0s, t_flights]).T
-            not_nan = ~np.isnan(targs)
-
-            # fit model
-            lm = linear_model.LinearRegression(n_jobs=-1)
-            lm.fit(predictors[not_nan], targs[not_nan])
-
-            predictions = np.nan * np.zeros(len(targs))
-            predictions[not_nan] = lm.predict(predictors[not_nan])
-
-            h_res_ = targs - predictions
-            h_res[:, t_step] = h_res_
-
-        print('PRUNING UNPAIRED CROSSINGS...')
-        # create new dict with traj_ids as keys and sub-dicts as values
-        # containing lists of early vs. late crossings
-        crossings_dict = {}
-
-        for h_res_, crossing_type, traj_id in zip(
-                h_res, crossing_types, traj_ids):
-
-            # make new item in dict if trajectory id not already in it
-            if traj_id not in crossings_dict:
-                crossings_dict[traj_id] = {'early': [], 'late': []}
-
-            # store crossing heading residuals under correct traj and
-            # crossing type
-            crossings_dict[traj_id][crossing_type].append(h_res_)
-
-        # get pairs of pre-averaged crossing types
-        # in trajectories that include both valid early and late
-        # crossings
-        earlies = []
-        lates = []
-        for traj_id, crossing_sets in crossings_dict.items():
-
-            if crossing_sets['early'] and crossing_sets['late']:
-                # average over multiple early/multiple late encounters
-                early = np.nanmean(crossing_sets['early'], axis=0)
-                late = np.nanmean(crossing_sets['late'], axis=0)
-
-                earlies.append(early.copy())
-                lates.append(late.copy())
-
-        # calculate late-minus-early difference
-        earlies = np.array(earlies)
-        lates = np.array(lates)
-        diffs = lates - earlies
-
-        print('CROSSING GROUP: "{}"'.format(cg_id))
-        print('{} TRAJECTORIES INCLUDING VALID EARLY AND LATE CROSSINGS'.
-            format(len(diffs)))
-
-        # calculate p-values using paired t-test
-        p_vals = np.nan * np.zeros(diffs.shape[1])
-        for t_step in np.arange(ts_before + ts_after):
-            a = earlies[:, t_step]
-            b = lates[:, t_step]
-
-            not_nan_a = ~np.isnan(a)
-            not_nan_b = ~np.isnan(b)
-            not_nan = (not_nan_a * not_nan_b).astype(bool)
-
-            p_val = ttest_rel(a[not_nan], b[not_nan])[1]
-            p_vals[t_step] = p_val
-
-        # plot earlies and lates, overlaid with p-values
-        ts = np.arange(-ts_before, ts_after) / 100.
-        ax = axs[cg_id]
-
-        # early
-        h_1 = ax.plot(
-            ts, np.nanmean(earlies, axis=0), color='b', lw=2, label='early')[0]
-        ax.fill_between(
-            ts,
-            np.nanmean(earlies, axis=0) - stats.nansem(earlies, axis=0),
-            np.nanmean(earlies, axis=0) + stats.nansem(earlies, axis=0),
-            color='b', alpha=0.2)
-
-        # late
-        h_2 = ax.plot(
-            ts, np.nanmean(lates, axis=0), color='g', lw=2, label='late')[0]
-        ax.fill_between(
-            ts,
-            np.nanmean(lates, axis=0) - stats.nansem(lates, axis=0),
-            np.nanmean(lates, axis=0) + stats.nansem(lates, axis=0),
-            color='g', alpha=0.2)
-
-        # p-values
-        ax_twin = ax.twinx()
-        ax_twin.plot(ts, p_vals, lw=2, ls='--', color='k')
-        ax_twin.axhline(0.05, color='gray')
-
-        ax.set_xlabel('time since crossing (s)')
-        ax.set_ylabel('h*')
-        ax.set_title(CROSSING_GROUP_LABELS[cg_id])
-        ax.legend(handles=[h_1, h_2], loc='best')
-
-        ax.set_xlim(ts[0], ts[-1])
-        set_fontsize(ax, 16)
-
-    return fig
-
-
-def early_crossings_vs_n_crossings(
-        CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
-        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        MAX_CROSSINGS_EARLY, SUBTRACT_INITIAL_HEADING,
-        T_BEFORE, T_AFTER, AX_GRID):
-    """
-    Plot early crossings only as a function of how many crossings there
-    are in a trajectory in total. This tests the null hypothesis that there
-    are two types of flies: ones that perform only a few upwind oriented
-    crossings and ones that perform many crosswind oriented crossings.
-    """
-    ts_before = int(round(T_BEFORE / DT))
-    ts_after = int(round(T_AFTER / DT))
-
-    fig, axs_ = plt.subplots(
-        *AX_GRID, figsize=(15, 10), tight_layout=True, squeeze=False)
-    axs = {cg_id: ax for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_.flatten())}
-
-    for cg_id in CROSSING_GROUP_IDS:
-
-        print('LOADING DATA FOR CROSSING GROUP: "{}"...'.format(cg_id))
-
-        # get all early crossings that satisfy our criteria
-        crossings_early = session.query(models.Crossing).join(
-            models.CrossingFeatureSetBasic).filter(
-            models.Crossing.crossing_group_id == cg_id,
-            models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY,
-            models.CrossingFeatureSetBasic.position_x_peak.between(
-                X_0_MIN, X_0_MAX),
-            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
-                H_0_MIN, H_0_MAX))
-
-        # store headings, x_0, t_flight, and total number of crossings in
-        # trajectory for each early crossing
-        headings = np.nan * np.zeros(
-            (crossings_early.count(), ts_before + ts_after))
-        x_0s = np.nan * np.zeros(crossings_early.count())
-        t_flights = np.nan * np.zeros(crossings_early.count())
-        n_crossings_traj = -1 * np.zeros(crossings_early.count(), dtype=int)
-        traj_ids = []
-
-        for ctr, crossing in enumerate(crossings_early):
-            # get headings
-            headings_ = crossing.timepoint_field(
-                session, 'heading_xyz', -ts_before, ts_after-1,
-                'peak', 'peak', nan_pad=True)
-
-            if SUBTRACT_INITIAL_HEADING:
-                headings_ -= crossing.feature_set_basic.heading_xyz_peak
-
-            # get total number of crossings in the trajectory this
-            # crossing came from
-            traj_id = crossing.trajectory_id
-
-            n_crossings_traj_ = session.query(models.Crossing).filter(
-                models.Crossing.crossing_group_id == cg_id,
-                models.Crossing.trajectory_id == traj_id).count()
-
-            # store headings, x pos, t_flight, and n crossings in traj
-            headings[ctr] = deepcopy(headings_)
-            x_0s[ctr] = crossing.feature_set_basic.position_x_peak
-            t_flights[ctr] = crossing.t_flight_peak
-            n_crossings_traj[ctr] = n_crossings_traj_
-
-            traj_ids.append(traj_id)
-
-        traj_ids = np.array(traj_ids)
-
-        print('CALCULATING HEADING RESIDUALS...')
-        h_res = np.nan * np.zeros(headings.shape)
-
-        for t_step in range(ts_before + ts_after):
-
-            # get targets (headings) and predictors (x_0 and t_flight)
-            targs = headings[:, t_step]
-            predictors = np.array([x_0s, t_flights]).T
-            not_nan = ~np.isnan(targs)
-
-            # fit model
-            lm = linear_model.LinearRegression(n_jobs=-1)
-            lm.fit(predictors[not_nan], targs[not_nan])
-
-            predictions = np.nan * np.zeros(len(targs))
-            predictions[not_nan] = lm.predict(predictors[not_nan])
-
-            h_res_ = targs - predictions
-            h_res[:, t_step] = h_res_
-
-        # sort heading time-series into groups according to total crossings
-        # in trajectory
-        traj_short_mask = n_crossings_traj <= MAX_CROSSINGS_EARLY
-        traj_long_mask = n_crossings_traj > MAX_CROSSINGS_EARLY
-
-        h_res_traj_short = h_res[traj_short_mask]
-        h_res_traj_long = h_res[traj_long_mask]
-
-        print('{} EARLY CROSSINGS IN SHORT TRAJECTORY GROUP'.format(
-            len(h_res_traj_short)))
-        print('{} EARLY CROSSINGS IN LONG TRAJECTORY GROUP'.format(
-            len(h_res_traj_long)))
-
-        # get p-values using adjusted t-test
-        p_vals = np.nan * np.zeros(h_res_traj_short.shape[1])
-        for t_step in np.arange(ts_before + ts_after):
-            a = h_res_traj_short[:, t_step]
-            b = h_res_traj_long[:, t_step]
-
-            not_nan_a = ~np.isnan(a)
-            not_nan_b = ~np.isnan(b)
-
-            n1 = len(np.unique(traj_ids[traj_short_mask][not_nan_a]))
-            n2 = len(np.unique(traj_ids[traj_long_mask][not_nan_b]))
-
-            p_val = stats.ttest_adjusted_ns(
-                a[not_nan_a], b[not_nan_b], n1, n2)[1]
-            p_vals[t_step] = p_val
-
-        # make plots
-        ts = np.arange(-ts_before, ts_after) / 100.
-        ax = axs[cg_id]
-        ax_twin = ax.twinx()
-
-        # trajs with few crossings
-        h_1 = ax.plot(
-            ts, np.nanmean(h_res_traj_short, axis=0),
-            color='r', lw=2, label='few')[0]
-        ax.fill_between(
-            ts,
-            np.nanmean(h_res_traj_short, axis=0)
-                - stats.nansem(h_res_traj_short, axis=0),
-            np.nanmean(h_res_traj_short, axis=0)
-                + stats.nansem(h_res_traj_short, axis=0),
-            color='r', alpha=0.2)
-
-        # trajs with many crossings
-        h_2 = ax.plot(
-            ts, np.nanmean(h_res_traj_long, axis=0),
-            color='c', lw=2, label='many')[0]
-        ax.fill_between(
-            ts,
-            np.nanmean(h_res_traj_long, axis=0)
-                - stats.nansem(h_res_traj_long, axis=0),
-            np.nanmean(h_res_traj_long, axis=0)
-                + stats.nansem(h_res_traj_long, axis=0),
-            color='c', alpha=0.2)
-
-        ax.set_xlabel('time since crossing (s)')
-        ax.set_ylabel('h*')
-        ax.set_title(CROSSING_GROUP_LABELS[cg_id])
-        ax.legend(handles=[h_1, h_2])
-
-        ax.set_xlim(ts[0], ts[-1])
-
-        # plot p-values
-        ax_twin.plot(ts, p_vals, color='k', lw=2, ls='--')
-        ax_twin.axhline(0.05, color='gray', lw=2)
-        ax_twin.set_ylabel('p-value (t-test)')
-
-        for ax_ in [ax, ax_twin]:
-            set_fontsize(ax_, 16)
-
     return fig
 
 
@@ -1239,8 +1192,7 @@ def infotaxis_history_dependence(
         MAX_CROSSINGS_EARLY, X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
         X_0_MIN_SIM, X_0_MAX_SIM, X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
         T_BEFORE_EXPT, T_AFTER_EXPT, TS_BEFORE_SIM, TS_AFTER_SIM,
-        HEADING_SMOOTHING_SIM,
-        HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
+        HEADING_SMOOTHING_SIM, Y_LIM,
         AX_GRID, AX_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS,
         SAVE_FILE_PREFIX):
     """
@@ -1333,41 +1285,222 @@ def infotaxis_history_dependence(
             t, mean_late - sem_late, mean_late + sem_late,
             color='g', alpha=0.2)
 
-        ax.set_xlabel('time steps since odor peak (s)')
-        ax.set_title(SIM_LABELS[cg_id])
+        ax.set_xlabel('time steps since crossing (s)')
+        ax.set_title('infotaxis - {}'.format(SIM_LABELS[cg_id]))
 
         save_data = {'t': t, 'early': mean_early, 'late': mean_late}
         save_file = '{}_{}.npy'.format(SAVE_FILE_PREFIX, cg_id)
         np.save(save_file, np.array([save_data]))
 
-        # plot p-values
-        p_vals = get_ks_p_vals(
-            np.array(headings['it_hist_dependence'][cg_id]['early']),
-            np.array(headings['it_hist_dependence'][cg_id]['late']))
+        ax.set_ylim(Y_LIM)
 
-        ## get y-position to plot p-vals at
-        y_min, y_max = ax.get_ylim()
-        y_range = y_max - y_min
-
-        y_p_vals = (y_min + 0.02*y_range) * np.ones(len(p_vals))
-        y_p_vals_10 = y_p_vals.copy()
-        y_p_vals_05 = y_p_vals.copy()
-        y_p_vals_01 = y_p_vals.copy()
-        y_p_vals_10[p_vals > 0.1] = np.nan
-        y_p_vals_05[p_vals > 0.05] = np.nan
-        y_p_vals_01[p_vals > 0.01] = np.nan
-
-        ax.plot(t, y_p_vals_10, lw=4, color='gray')
-        ax.plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
-        ax.plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
-
-        print('min p-value = {}'.format(np.nanmin(p_vals)))
-
-        # ax.legend(handles=[handle_early, handle_late])
-
-        ax.set_ylabel('$\Delta$ heading (degrees)')
+        ax.set_ylabel('$\Delta$ heading (deg)')
 
     for ax in axs.flatten():
+        set_fontsize(ax, FONT_SIZE)
+
+    return fig
+
+
+def example_trajs_real_and_models(
+        EXPT_ID, TRAJ_NUMBER, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
+        DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
+        HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
+        SEED_SURGE, SEED_CENTERLINE,
+        FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
+        EXPT_LABEL, FONT_SIZE):
+    """
+    Show an example trajectory through a wind tunnel plume with the crossings marked.
+    Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
+    with its SEM as well as many individual examples.
+    """
+
+    from db_api.infotaxis import models as models_infotaxis
+    from db_api.infotaxis.connect import session as session_infotaxis
+
+    if isinstance(TRAJ_NUMBER, int):
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPT_ID, odor_state='on', clean=True).all()
+        traj = list(trajs)[TRAJ_NUMBER]
+    else:
+        traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
+
+    print('Trajectory: {}'.format(traj.id))
+
+    # get plottable quantities for real trajectory
+    xs, ys, zs = traj.positions(session).T[:, :TRAJ_END_TP]
+    cs = traj.odors(session)[:TRAJ_END_TP]
+
+    traj_dict_real = {
+        'title': 'empirical', 'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
+
+    # generate trajectories for simple trackers
+    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
+
+    start_pos = np.array([xs[0], ys[0], zs[0]])
+    duration = TRAJ_END_TP * DT
+
+    # generate surge-cast trajectory
+    np.random.seed(SEED_SURGE)
+    ag_surge = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
+        hit_trigger='peak', surge_amp=SURGE_AMP, tau_surge=TAU_SURGE,
+        bounds=BOUNDS)
+    traj_surge = ag_surge.track(pl, start_pos, duration, DT)
+    traj_dict_surge = {
+        'title': 'surge-cast',
+        'xs': traj_surge['xs'][:, 0],
+        'ys': traj_surge['xs'][:, 1],
+        'zs': traj_surge['xs'][:, 2],
+        'cs': traj_surge['odors'],
+    }
+
+    # generate centerline-inferring trajectory
+    np.random.seed(SEED_CENTERLINE)
+    k_0 = K_0 * np.eye(2)
+    k_s = K_S * np.eye(2)
+
+    ag_centerline = CenterlineInferringAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
+        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
+        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
+    traj_centerline = ag_centerline.track(pl, start_pos, duration, DT)
+    traj_dict_centerline = {
+        'title': 'centerline-inferring',
+        'xs': traj_centerline['xs'][:, 0],
+        'ys': traj_centerline['xs'][:, 1],
+        'zs': traj_centerline['xs'][:, 2],
+        'cs': traj_centerline['odors'],
+    }
+
+    # get infotaxis trajectory corresponding to real trajectory
+    real_trajectory_id = traj.id
+    # get geometric configuration corresponding to this real trajectory
+    gcert = session_infotaxis.query(
+        models_infotaxis.GeomConfigExtensionRealTrajectory).filter_by(
+        real_trajectory_id=real_trajectory_id).first()
+    gc = gcert.geom_config
+    end_tp_info = int(TRAJ_END_TP * DT / gcert.avg_dt)
+
+    trial = session_infotaxis.query(models_infotaxis.Trial).filter(
+        models_infotaxis.Trial.simulation_id == INFOTAXIS_SIMULATION_ID,
+        models_infotaxis.Trial.geom_config_id == gc.id).first()
+
+    x_idxs = trial.timepoint_field(session_infotaxis, 'xidx')
+    y_idxs = trial.timepoint_field(session_infotaxis, 'yidx')
+    z_idxs = trial.timepoint_field(session_infotaxis, 'zidx')
+    cs_infotaxis = trial.timepoint_field(session_infotaxis, 'odor')
+
+    x_idxs = x_idxs[:end_tp_info]
+    y_idxs = y_idxs[:end_tp_info]
+    z_idxs = z_idxs[:end_tp_info]
+    cs_infotaxis = cs_infotaxis[:end_tp_info]
+
+    # convert to positions
+    sim = trial.simulation
+    env = sim.env
+
+    xs_infotaxis = []
+    ys_infotaxis = []
+    zs_infotaxis = []
+
+    for x_idx, y_idx, z_idx in zip(x_idxs, y_idxs, z_idxs):
+        x, y, z = env.pos_from_idx([x_idx, y_idx, z_idx])
+        xs_infotaxis.append(x)
+        ys_infotaxis.append(y)
+        zs_infotaxis.append(z)
+
+    xs_infotaxis = np.array(xs_infotaxis)
+    ys_infotaxis = np.array(ys_infotaxis)
+    zs_infotaxis = np.array(zs_infotaxis)
+
+    traj_dict_infotaxis = {
+        'title': 'infotaxis',
+        'xs': xs_infotaxis,
+        'ys': ys_infotaxis,
+        'zs': zs_infotaxis,
+        'cs': cs_infotaxis,
+    }
+
+    ## MAKE PLOTS
+    fig = plt.figure(figsize=FIG_SIZE, tight_layout=True)
+    axs = [fig.add_subplot(4, 1, ctr+1, projection='3d') for ctr in range(4)]
+
+    # plot all trajectories
+    traj_dicts = [
+        traj_dict_real,
+        traj_dict_surge,
+        traj_dict_centerline,
+        traj_dict_infotaxis
+    ]
+
+    for traj_dict, ax in zip(traj_dicts, axs):
+
+        # overlay plume cylinder
+        CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
+        CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
+
+        CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
+        CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
+
+        MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
+
+        y = np.linspace(-1, 1, 100, endpoint=True)
+        x = np.linspace(-0.3, 1, 5, endpoint=True)
+        yy, xx = np.meshgrid(y, x)
+        zz = np.sqrt(1 - yy ** 2)
+
+        yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
+        zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
+        zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
+        rstride = 20
+        cstride = 10
+
+        ax.plot_surface(
+            xx, yy, zz_top, lw=0,
+            color=CYL_COLOR, alpha=CYL_ALPHA,
+            rstride=rstride, cstride=cstride)
+
+        ax.plot_surface(
+            xx, yy, zz_bottom, lw=0,
+            color=CYL_COLOR, alpha=CYL_ALPHA,
+            rstride=rstride, cstride=cstride)
+
+        # plot trajectory
+        xs_ = traj_dict['xs']
+        ys_ = traj_dict['ys']
+        zs_ = traj_dict['zs']
+        cs_ = traj_dict['cs']
+
+        # show trajectory
+        ax.plot(xs_, ys_, zs_, color='k', lw=3, zorder=1)
+        # overlay concentrations
+        ax.scatter(
+            xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2,
+            cmap=cmx.hot, lw=0, alpha=1, zorder=2)
+        # mark start
+        ax.scatter(
+            xs_[0], ys_[0], zs_[0], s=400, marker='*', lw=0, c='g', zorder=3)
+
+        ax.set_xlim(-0.3, 1)
+        ax.set_ylim(-0.15, 0.15)
+        ax.set_zlim(-0.15, 0.15)
+
+        ax.set_xticks([-0.3, 1.])
+        ax.set_yticks([-0.15, 0.15])
+        ax.set_zticks([-0.15, 0.15])
+
+        ax.set_xticklabels([-30, 100])
+        ax.set_yticklabels([-15, 15])
+        ax.set_zticklabels([-15, 15])
+
+        ax.set_xlabel('x (cm)')
+        ax.set_ylabel('y (cm)')
+        ax.set_zlabel('z (cm)')
+
+        ax.set_title(traj_dict['title'])
+
+    for ax in axs:
         set_fontsize(ax, FONT_SIZE)
 
     return fig
@@ -1590,96 +1723,6 @@ def hybrid_model_history_dependence(
     return fig
 
 
-def models_vs_data_mean_history_dependence(
-        DATA_TEMP_FILE,
-        SURGE_CAST_TEMP_FILE,
-        CENTERLINE_TEMP_FILE,
-        INFOTAXIS_TEMP_FILE,
-        INFOTAXIS_DT,
-        T_MIN, T_MAX):
-    """
-    Plot the difference between the model and data mean crossing-triggered
-    heading time-series for early and late crossings.
-    :param DATA_TEMP_FILE:
-    :param SURGE_CAST_TEMP_FILE:
-    :param CENTERLINE_TEMP_FILE:
-    :param INFOTAXIS_TEMP_FILE:
-    :param INFOTAXIS_DT:
-    :return:
-    """
-    data = np.load(DATA_TEMP_FILE)[0]
-    surge_cast = np.load(SURGE_CAST_TEMP_FILE)[0]
-    centerline = np.load(CENTERLINE_TEMP_FILE)[0]
-    infotaxis = np.load(INFOTAXIS_TEMP_FILE)[0]
-
-    fig, axs = plt.subplots(1, 2, figsize=(15, 5), sharey=True, tight_layout=True)
-
-    ts = np.arange(T_MIN, T_MAX, 0.01)
-    for means in [data, surge_cast, centerline]:
-        assert np.max(means['t']) > T_MAX
-        assert np.min(means['t']) < T_MIN
-
-    assert np.max(infotaxis['t'] * INFOTAXIS_DT) > T_MAX
-    assert np.min(infotaxis['t'] * INFOTAXIS_DT) < T_MIN
-
-    for label, ax in zip(['early', 'late'], axs):
-        # resample all data
-        mask_data = ((data['t'] >= ts.min()) \
-            * (data['t'] < ts.max())).astype(bool)
-        t_data = data['t'][mask_data]
-        mean_data = data[label][mask_data]
-        mean_data, t_data = resample(mean_data, len(ts), t=t_data)
-
-        mask_surge_cast = ((surge_cast['t'] >= ts.min()) \
-            * (surge_cast['t'] < ts.max())).astype(bool)
-        t_surge_cast = surge_cast['t'][mask_surge_cast]
-        mean_surge_cast = surge_cast[label][mask_surge_cast]
-        mean_surge_cast, t_surge_cast = resample(
-            mean_surge_cast, len(ts), t=t_surge_cast)
-
-        mask_centerline = ((centerline['t'] >= ts.min()) \
-            * (centerline['t'] < ts.max())).astype(bool)
-        t_centerline = centerline['t'][mask_centerline]
-        mean_centerline = centerline[label][mask_centerline]
-        mean_centerline, t_centerline = resample(
-            mean_centerline, len(ts), t=t_centerline)
-
-        t_infotaxis = infotaxis['t'] * INFOTAXIS_DT
-        mask_infotaxis = ((t_infotaxis >= ts.min()) \
-            * (t_infotaxis < ts.max())).astype(bool)
-        t_infotaxis = t_infotaxis[mask_infotaxis]
-        mean_infotaxis = infotaxis[label][mask_infotaxis]
-        mean_infotaxis, t_infotaxis = resample(
-            mean_infotaxis, len(ts), t=t_infotaxis)
-
-        # plot difference between data and all models
-        hs = []
-        hs.append(
-            ax.plot(t_data, mean_surge_cast - mean_data,
-                lw=2, label='surge/cast')[0]
-        )
-
-        hs.append(
-            ax.plot(t_data, mean_centerline - mean_data,
-                lw=2, label='centerline')[0]
-        )
-
-        hs.append(
-            ax.plot(t_data, mean_infotaxis - mean_data,
-                lw=2, label='infotaxis')[0]
-        )
-
-        ax.axhline(0, color='gray', ls='--')
-        ax.set_title('{} crossings'.format(label))
-        ax.set_xlabel('time since crossing (s)')
-        ax.set_ylabel(r'model $\Delta$ heading - data $\Delta$ heading')
-        ax.legend(handles=hs)
-
-    for ax in axs:
-        set_fontsize(ax, 16)
-
-    return fig
-
 
 def infotaxis_position_distribution(
         HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
@@ -1897,205 +1940,4 @@ def infotaxis_wind_speed_dependence(
     return fig
 
 
-def example_trajs_real_and_models(
-        EXPT_ID, TRAJ_NUMBER, TRAJ_END_TP, INFOTAXIS_SIMULATION_ID,
-        DT, TAU, NOISE, BIAS, THRESHOLD, PL_CONC, PL_MEAN, PL_STD, BOUNDS,
-        HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
-        SEED_SURGE, SEED_CENTERLINE,
-        FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
-        EXPT_LABEL, FONT_SIZE):
-    """
-    Show an example trajectory through a wind tunnel plume with the crossings marked.
-    Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
-    with its SEM as well as many individual examples.
-    """
-
-    from db_api.infotaxis import models as models_infotaxis
-    from db_api.infotaxis.connect import session as session_infotaxis
-
-    if isinstance(TRAJ_NUMBER, int):
-        trajs = session.query(models.Trajectory).filter_by(
-            experiment_id=EXPT_ID, odor_state='on', clean=True).all()
-        traj = list(trajs)[TRAJ_NUMBER]
-    else:
-        traj = session.query(models.Trajectory).filter_by(id=TRAJ_NUMBER).first()
-
-    print('Trajectory: {}'.format(traj.id))
-
-    # get plottable quantities for real trajectory
-    xs, ys, zs = traj.positions(session).T[:, :TRAJ_END_TP]
-    cs = traj.odors(session)[:TRAJ_END_TP]
-
-    traj_dict_real = {'title': 'real', 'xs': xs, 'ys': ys, 'zs': zs, 'cs': cs}
-
-    # generate trajectories for simple trackers
-    pl = GaussianLaminarPlume(PL_CONC, PL_MEAN, PL_STD)
-
-    start_pos = np.array([xs[0], ys[0], zs[0]])
-    duration = TRAJ_END_TP * DT
-
-    # generate surge-cast trajectory
-    np.random.seed(SEED_SURGE)
-    ag_surge = SurgingAgent(
-        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
-        hit_trigger='peak', surge_amp=SURGE_AMP, tau_surge=TAU_SURGE,
-        bounds=BOUNDS)
-    traj_surge = ag_surge.track(pl, start_pos, duration, DT)
-    traj_dict_surge = {
-        'title': 'surge-cast',
-        'xs': traj_surge['xs'][:, 0],
-        'ys': traj_surge['xs'][:, 1],
-        'zs': traj_surge['xs'][:, 2],
-        'cs': traj_surge['odors'],
-    }
-
-    # generate centerline-inferring trajectory
-    np.random.seed(SEED_CENTERLINE)
-    k_0 = K_0 * np.eye(2)
-    k_s = K_S * np.eye(2)
-
-    ag_centerline = CenterlineInferringAgent(
-        tau=TAU, noise=NOISE, bias=BIAS, threshold=THRESHOLD,
-        hit_trigger='peak', hit_influence=HIT_INFLUENCE,
-        k_0=k_0, k_s=k_s, tau_memory=TAU_MEMORY, bounds=BOUNDS)
-    traj_centerline = ag_centerline.track(pl, start_pos, duration, DT)
-    traj_dict_centerline = {
-        'title': 'centerline-inferring',
-        'xs': traj_centerline['xs'][:, 0],
-        'ys': traj_centerline['xs'][:, 1],
-        'zs': traj_centerline['xs'][:, 2],
-        'cs': traj_centerline['odors'],
-    }
-
-    # get infotaxis trajectory corresponding to real trajectory
-    real_trajectory_id = traj.id
-    # get geometric configuration corresponding to this real trajectory
-    gcert = session_infotaxis.query(
-        models_infotaxis.GeomConfigExtensionRealTrajectory).filter_by(
-        real_trajectory_id=real_trajectory_id).first()
-    gc = gcert.geom_config
-    end_tp_info = int(TRAJ_END_TP * DT / gcert.avg_dt)
-
-    trial = session_infotaxis.query(models_infotaxis.Trial).filter(
-        models_infotaxis.Trial.simulation_id == INFOTAXIS_SIMULATION_ID,
-        models_infotaxis.Trial.geom_config_id == gc.id).first()
-
-    x_idxs = trial.timepoint_field(session_infotaxis, 'xidx')
-    y_idxs = trial.timepoint_field(session_infotaxis, 'yidx')
-    z_idxs = trial.timepoint_field(session_infotaxis, 'zidx')
-    cs_infotaxis = trial.timepoint_field(session_infotaxis, 'odor')
-
-    x_idxs = x_idxs[:end_tp_info]
-    y_idxs = y_idxs[:end_tp_info]
-    z_idxs = z_idxs[:end_tp_info]
-    cs_infotaxis = cs_infotaxis[:end_tp_info]
-
-    # convert to positions
-    sim = trial.simulation
-    env = sim.env
-
-    xs_infotaxis = []
-    ys_infotaxis = []
-    zs_infotaxis = []
-
-    for x_idx, y_idx, z_idx in zip(x_idxs, y_idxs, z_idxs):
-        x, y, z = env.pos_from_idx([x_idx, y_idx, z_idx])
-        xs_infotaxis.append(x)
-        ys_infotaxis.append(y)
-        zs_infotaxis.append(z)
-
-    xs_infotaxis = np.array(xs_infotaxis)
-    ys_infotaxis = np.array(ys_infotaxis)
-    zs_infotaxis = np.array(zs_infotaxis)
-
-    traj_dict_infotaxis = {
-        'title': 'infotaxis',
-        'xs': xs_infotaxis,
-        'ys': ys_infotaxis,
-        'zs': zs_infotaxis,
-        'cs': cs_infotaxis,
-    }
-
-    ## MAKE PLOTS
-    fig = plt.figure(figsize=FIG_SIZE, tight_layout=True)
-    axs = [fig.add_subplot(4, 1, ctr+1, projection='3d') for ctr in range(4)]
-
-    # plot all trajectories
-    traj_dicts = [
-        traj_dict_real,
-        traj_dict_surge,
-        traj_dict_centerline,
-        traj_dict_infotaxis
-    ]
-
-    for traj_dict, ax in zip(traj_dicts, axs):
-
-        # overlay plume cylinder
-        CYL_MEAN_Y = PLUME_PARAMS_DICT[EXPT_ID]['ymean']
-        CYL_MEAN_Z = PLUME_PARAMS_DICT[EXPT_ID]['zmean']
-
-        CYL_SCALE_Y = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['ystd']
-        CYL_SCALE_Z = CYL_STDS * PLUME_PARAMS_DICT[EXPT_ID]['zstd']
-
-        MAX_CONC = PLUME_PARAMS_DICT[EXPT_ID]['max_conc']
-
-        y = np.linspace(-1, 1, 100, endpoint=True)
-        x = np.linspace(-0.3, 1, 5, endpoint=True)
-        yy, xx = np.meshgrid(y, x)
-        zz = np.sqrt(1 - yy ** 2)
-
-        yy = CYL_SCALE_Y * yy + CYL_MEAN_Y
-        zz_top = CYL_SCALE_Z * zz + CYL_MEAN_Z
-        zz_bottom = -CYL_SCALE_Z * zz + CYL_MEAN_Z
-        rstride = 20
-        cstride = 10
-
-        ax.plot_surface(
-            xx, yy, zz_top, lw=0,
-            color=CYL_COLOR, alpha=CYL_ALPHA,
-            rstride=rstride, cstride=cstride)
-
-        ax.plot_surface(
-            xx, yy, zz_bottom, lw=0,
-            color=CYL_COLOR, alpha=CYL_ALPHA,
-            rstride=rstride, cstride=cstride)
-
-        # plot trajectory
-        xs_ = traj_dict['xs']
-        ys_ = traj_dict['ys']
-        zs_ = traj_dict['zs']
-        cs_ = traj_dict['cs']
-
-        # show trajectory
-        ax.plot(xs_, ys_, zs_, color='k', lw=3, zorder=1)
-        # overlay concentrations
-        ax.scatter(
-            xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2,
-            cmap=cmx.hot, lw=0, alpha=1, zorder=2)
-        # mark start
-        ax.scatter(
-            xs_[0], ys_[0], zs_[0], s=400, marker='*', lw=0, c='g', zorder=3)
-
-        ax.set_xlim(-0.3, 1)
-        ax.set_ylim(-0.15, 0.15)
-        ax.set_zlim(-0.15, 0.15)
-
-        ax.set_xticks([-0.3, 1.])
-        ax.set_yticks([-0.15, 0.15])
-        ax.set_zticks([-0.15, 0.15])
-
-        ax.set_xticklabels([-30, 100])
-        ax.set_yticklabels([-15, 15])
-        ax.set_zticklabels([-15, 15])
-
-        ax.set_xlabel('x (cm)')
-        ax.set_ylabel('y (cm)')
-        ax.set_zlabel('z (cm)')
-
-        ax.set_title(traj_dict['title'])
-
-    for ax in axs:
-        set_fontsize(ax, FONT_SIZE)
-
-    return fig
 

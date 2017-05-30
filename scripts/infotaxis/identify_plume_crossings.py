@@ -11,36 +11,34 @@ from db_api.infotaxis import add_script_execution
 import time_series
 
 
-SIM_PREFIX = 'wind_tunnel_discretized_matched_r1000_d0.06'
 HEADING_SMOOTHING = 3
 THRESHOLDS = {'fly': 10, 'mosq': 430}
 
 SCRIPTID = 'identify_plume_crossings'
-SCRIPTNOTES = ('Identify plume crossings for simulations with prefix "{}" '
-    'using heading smoothing "{}" and thresholds "{}"'.format(
-    SIM_PREFIX, HEADING_SMOOTHING, THRESHOLDS))
 
-SIM_SUFFIXES = [
-    'fruitfly_0.3mps_checkerboard_floor_odor_on',
-    'fruitfly_0.3mps_checkerboard_floor_odor_none',
-    'fruitfly_0.3mps_checkerboard_floor_odor_afterodor',
-    'fruitfly_0.4mps_checkerboard_floor_odor_on',
-    'fruitfly_0.4mps_checkerboard_floor_odor_none',
-    'fruitfly_0.4mps_checkerboard_floor_odor_afterodor',
-    'fruitfly_0.6mps_checkerboard_floor_odor_on',
-    'fruitfly_0.6mps_checkerboard_floor_odor_none',
-    'fruitfly_0.6mps_checkerboard_floor_odor_afterodor',
-    'mosquito_0.4mps_checkerboard_floor_odor_on',
-    'mosquito_0.4mps_checkerboard_floor_odor_none',
-    'mosquito_0.4mps_checkerboard_floor_odor_afterodor',]
+def main(SIM_PREFIX, trial_limit=None):
 
-SIM_IDS = ['{}_{}'.format(SIM_PREFIX, sim_suffix) for sim_suffix in SIM_SUFFIXES]
+    SCRIPTNOTES = ('Identify plume crossings for simulations with prefix "{}" '
+        'using heading smoothing "{}" and thresholds "{}"'.format(
+        SIM_PREFIX, HEADING_SMOOTHING, THRESHOLDS))
 
+    SIM_SUFFIXES = [
+        'fruitfly_0.3mps_checkerboard_floor_odor_on',
+        'fruitfly_0.3mps_checkerboard_floor_odor_none',
+        'fruitfly_0.3mps_checkerboard_floor_odor_afterodor',
+        'fruitfly_0.4mps_checkerboard_floor_odor_on',
+        'fruitfly_0.4mps_checkerboard_floor_odor_none',
+        'fruitfly_0.4mps_checkerboard_floor_odor_afterodor',
+        'fruitfly_0.6mps_checkerboard_floor_odor_on',
+        'fruitfly_0.6mps_checkerboard_floor_odor_none',
+        'fruitfly_0.6mps_checkerboard_floor_odor_afterodor',
+        'mosquito_0.4mps_checkerboard_floor_odor_on',
+        'mosquito_0.4mps_checkerboard_floor_odor_none',
+        'mosquito_0.4mps_checkerboard_floor_odor_afterodor',]
 
-def main(trial_limit=None):
+    SIM_IDS = ['{}_{}'.format(SIM_PREFIX, sim_suffix) for sim_suffix in SIM_SUFFIXES]
 
     # add script execution to database
-
     add_script_execution(SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
 
     for sim_id in SIM_IDS:

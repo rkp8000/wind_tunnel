@@ -108,20 +108,15 @@ class CenterlineInferringAgent(object):
         """
 
         # get crosswind component (pointing from agent to centerline estimate)
-
         cw = (mu - x[1:])
         cw /= np.linalg.norm(cw)
 
         # get certainty
-
         certainty = np.linalg.det(np.linalg.inv(k))
 
         # get bias from certainty
-
         uw = -self.hit_influence * certainty
-
         bias = np.array([uw, cw[0], cw[1]])
-        bias *= (self.bias / np.linalg.norm(bias))
 
         return bias
 
@@ -184,9 +179,7 @@ class CenterlineInferringAgent(object):
         hit_occurred = False
 
         for t_ctr in range(n_steps):
-
             if t_ctr == 0:
-
                 centerline_mu = np.array([0., 0])
                 centerline_k = self.k_0
 
@@ -195,59 +188,43 @@ class CenterlineInferringAgent(object):
 
                 v = np.array([0., 0, 0])
                 x = start_pos.copy()
-
             else:
-
                 # get driving terms
-
                 eta = np.random.normal(0, self.noise, (3,))
                 b = self.bias_from_centerline_distr(x, centerline_mu, centerline_k)
 
                 # update velocity and position
-
                 v += (dt / self.tau) * (-v + eta + b)
                 x += v * dt
 
             v, x = self.reflect_if_out_of_bounds(v, x)
 
             # sample odor
-
             odor = plume.get_odor(x)
 
             # has hit occurred?
-
             if self.hit_trigger == 'entry':
-
                 if odor >= self.threshold and not in_puff:
-
                     hit = 1
                     in_puff = True
-
                 else:
-
                     hit = 0
 
             elif self.hit_trigger == 'peak':
-
                 hit = 0
 
                 if odor >= self.threshold:
-
                     if odor <= last_odor and not hit_occurred:
-
                         hit = 1
                         hit_occurred = True
-
                     last_odor = odor
 
             if odor < self.threshold:
-
                 last_odor = 0
                 in_puff = False
                 hit_occurred = False
 
             # store data for this time step
-
             centerline_mus[t_ctr] = centerline_mu
             centerline_ks[t_ctr] = centerline_k
 
@@ -260,21 +237,14 @@ class CenterlineInferringAgent(object):
             hits[t_ctr] = hit
 
             # update centerline distribution if hit has occurred
-
             if hit:
-
                 # sharpen posterior if hit occurred
-
                 centerline_mu, centerline_k = \
                     self.update_centerline_posterior(centerline_mu, centerline_k, x)
-
             else:
-
                 # otherwise let posterior decay back towards prior
-
                 centerline_mu, centerline_k = \
                     self.decay_centerline_posterior(centerline_mu, centerline_k, dt)
-
 
         return_dict = {
             'centerline_mus': centerline_mus,
@@ -385,13 +355,11 @@ class SurgingAgent(object):
             else:
 
                 # get driving terms
-
                 eta = np.random.normal(0, self.noise, (3,))
                 b = np.array([0, -x[1], -x[2]])
                 b *= (self.bias / np.linalg.norm(b))
 
                 # update velocity and position
-
                 v += (dt / self.tau) * (-v + eta + b - surges[t_ctr])
                 x += v * dt
 

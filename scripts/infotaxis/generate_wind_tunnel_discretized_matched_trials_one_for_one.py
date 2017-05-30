@@ -4,7 +4,6 @@ Generate one infotaxis trial for every real trial, matching starting location, n
 from __future__ import print_function, division
 
 SCRIPTID = 'generate_wind_tunnel_discretized_matched_trials_one_for_one'
-SCRIPTNOTES = 'Run for all experiments and odor states with d = 0.02 m^2/s.'
 
 
 from infotaxis.insect import Insect
@@ -18,7 +17,7 @@ from db_api.infotaxis import add_script_execution
 from config.generate_wind_tunnel_discretized_matched_trials_one_for_one import *
 
 
-def main(traj_limit=None):
+def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
     # add script execution to database
     add_script_execution(SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
 
@@ -40,28 +39,34 @@ def main(traj_limit=None):
 
             # get geom_config_group for this experiment and odor state
             geom_config_group_id = GEOM_CONFIG_GROUP_ID.format(expt, odor_state)
-            geom_config_group = session.query(models.GeomConfigGroup).get(geom_config_group_id)
+            geom_config_group = session.query(models.GeomConfigGroup).get(
+                geom_config_group_id)
 
             # get wind tunnel copy simulation so we can match plume and insect
-            # note we select the first simulation that is of this type and corresponds to the
-            # right geom_config_group, since we only use the plume from it, which is independent
-            # of what insect parameters were used
+            # note we select the first simulation that is of this type and
+            # corresponds to the right geom_config_group, since we only use the
+            # plume from it, which is independent of what insect parameters were used
             #
-            # for instance, the plume bound to a simulation in which the insect had D = 0.6 and that
-            # bound to a simulation where D = 0.4 will be the same, since it is only the insect's
+            # for instance, the plume bound to a simulation in which the insect
+            # had D = 0.6 and that bound to a simulation where D = 0.4 will be
+            # the same, since it is only the insect's
             # internal model that has changed
             wt_copy_sims = session.query(models.Simulation).\
                 filter(models.Simulation.geom_config_group == geom_config_group).\
-                filter(models.Simulation.id.like(WIND_TUNNEL_DISCRETIZED_SIMULATION_ID_PATTERN))
+                filter(models.Simulation.id.like(
+                    WIND_TUNNEL_DISCRETIZED_SIMULATION_ID_PATTERN))
 
             # get plume from corresponding discretized real wind tunnel trajectory
             if 'fruitfly' in expt:
-                pl = CollimatedPlume(env=ENV, dt=-1, orm=wt_copy_sims.first().plume)
+                pl = CollimatedPlume(
+                    env=ENV, dt=-1, orm=wt_copy_sims.first().plume)
             elif 'mosquito' in expt:
-                pl = SpreadingGaussianPlume(env=ENV, dt=-1, orm=wt_copy_sims.first().plume)
+                pl = SpreadingGaussianPlume(
+                    env=ENV, dt=-1, orm=wt_copy_sims.first().plume)
 
             # create insect
-            # note: we will actually make a new insect for each trial, since the dt's vary;
+            # note: we will actually make a new insect for each trial,
+            # since the dt's vary;
             # here we just set dt=-1, since this doesn't get stored in the db anyhow
             ins = Insect(env=ENV, dt=-1)
             ins.set_params(**insect_params)
@@ -116,7 +121,8 @@ def main(traj_limit=None):
                     trial.step()
 
                 # save trial
-                trial.add_timepoints(models, session=session, heading_smoothing=sim.heading_smoothing)
+                trial.add_timepoints(
+                    models, session=session, heading_smoothing=sim.heading_smoothing)
                 trial.generate_orm(models)
                 trial.orm.geom_config = geom_config
                 trial.orm.simulation = sim
