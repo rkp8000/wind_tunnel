@@ -262,46 +262,41 @@ def heading_concentration_dependence(
     for cg_id in CROSSING_GROUP_IDS:
 
         # get crossing group and crossings
-        crossing_group = session.query(models.CrossingGroup).filter_by(
-            id=cg_id).first()
-        crossings_all = session.query(models.Crossing).filter_by(
-            crossing_group=crossing_group)
+        crossings_all = session.query(models.Crossing).join(
+            models.CrossingFeatureSetBasic).filter(
+            models.Crossing.crossing_group_id == cg_id,
+            models.CrossingFeatureSetBasic.position_x_peak.between(
+                X_0_MIN, X_0_MAX),
+            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+                H_0_MIN, H_0_MAX))
 
         # get all initial hs, initial xs, peak concs, and heading time-series
         x_0s = []
         h_0s = []
         c_maxs = []
         headings = []
+        trajs_unique = []
 
         for crossing in crossings_all:
 
-            # throw away crossings that do not meet trigger criteria
-            position_x = getattr(
-                crossing.feature_set_basic, 'position_x_{}'.format('peak'))
-
-            if not (X_0_MIN <= position_x <= X_0_MAX):
-                continue
-
-            heading_xyz = getattr(
-                crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
-
-            if not (H_0_MIN <= heading_xyz <= H_0_MAX):
-                continue
-
             c_maxs.append(crossing.max_odor * conversion_factor)
-            x_0s.append(position_x)
-            h_0s.append(heading_xyz)
+            x_0s.append(crossing.feature_set_basic.position_x_peak)
+            h_0s.append(crossing.feature_set_basic.heading_xyz_peak)
 
-            temp = crossing.timepoint_field(
+            headings_ = crossing.timepoint_field(
                 session, 'heading_xyz', -ts_before, ts_after - 1,
                 'peak', 'peak', nan_pad=True)
 
-            headings.append(temp)
+            headings.append(headings_)
+
+            if crossing.trajectory_id not in trajs_unique:
+                trajs_unique.append(crossing.trajectory_id)
 
         x_0s = np.array(x_0s)
         h_0s = np.array(h_0s)
         c_maxs = np.array(c_maxs)
         headings = np.array(headings)
+        n_total = len(trajs_unique)
 
         partial_corrs = np.nan * np.ones((headings.shape[1],), dtype=float)
         p_vals = np.nan * np.ones((headings.shape[1],), dtype=float)
@@ -310,26 +305,25 @@ def heading_concentration_dependence(
         ns = np.nan * np.ones((headings.shape[1],), dtype=float)
 
         # loop through all time steps
+        for t_step in range(headings.shape[1]):
+            headings_this_tp = headings[:, t_step]
 
-        for ts in range(headings.shape[1]):
-            headings_this_tp = headings[:, ts]
-
-            if ts == (ts_models[cg_id] + ts_before):
+            if t_step == (ts_models[cg_id] + ts_before):
                 model_headings = headings_this_tp.copy()
 
             # create not-nan mask
             mask = ~np.isnan(headings_this_tp)
-            ns[ts] = mask.sum()
+            ns[t_step] = min(mask.sum(), n_total)
 
             # get partial correlations using all not-nan values
             r, p, lb, ub = stats.pearsonr_partial_with_confidence(
                 c_maxs[mask], headings_this_tp[mask],
-                [x_0s[mask], h_0s[mask]])
+                [x_0s[mask], h_0s[mask]], n=ns[t_step])
 
-            partial_corrs[ts] = r
-            p_vals[ts] = p
-            lbs[ts] = lb
-            ubs[ts] = ub
+            partial_corrs[t_step] = r
+            p_vals[t_step] = p
+            lbs[t_step] = lb
+            ubs[t_step] = ub
 
         data[cg_id] = {
             'x_0s': x_0s,
@@ -341,15 +335,13 @@ def heading_concentration_dependence(
             'lbs': lbs,
             'ubs': ubs,
             'model_headings': model_headings,
+            'n_total': n_total,
         }
 
     ## MAKE PLOT OF PARTIAL CORRELATIONS
     fig, axs = plt.figure(figsize=FIG_SIZE, facecolor='white', tight_layout=True), []
 
     axs.append(fig.add_subplot(2, 1, 1))
-    axs.append(axs[0].twinx())
-
-    axs[1].axhline(0.05)
 
     t = np.arange(-ts_before, ts_after) * DT
     t[ts_before] = np.nan
@@ -369,20 +361,12 @@ def heading_concentration_dependence(
 
         handles.append(handle)
 
-        # show p-values
-        axs[1].plot(
-            t[t > 0], data[cg_id]['p_vals'][t > 0],color=color, lw=2, ls='--')
-
     axs[0].axhline(0, color='gray', ls='--')
     axs[0].set_xlim(-T_BEFORE, T_AFTER)
 
     axs[0].set_xlabel('time of heading measurement\nsince crossing (s)')
     axs[0].set_ylabel('heading-concentration\npartial correlation')
     axs[0].legend(handles=handles, loc='upper left')
-
-    axs[1].set_ylim(0, 0.2)
-
-    axs[1].set_ylabel('p-value (dashed lines)')
 
     ## FIT BOTH MODELS TO EACH DATASET
     model_infos = {cg_id: None for cg_id in CROSSING_GROUP_IDS}
@@ -401,7 +385,7 @@ def heading_concentration_dependence(
         x_0s = x_0s[valid_mask]
         h_0s = h_0s[valid_mask]
 
-        n = len(hs)
+        n = min(len(hs), data[cg_id]['n_total'])
         rho = stats.pearsonr_partial_with_confidence(c_maxs, hs, [x_0s, h_0s])[0]
         binary_model = simple_models.ThresholdLinearHeadingConcModel(
             include_c_max_coefficient=False)
@@ -485,14 +469,15 @@ def early_vs_late_heading_timecourse(
 
     for cg_id in CROSSING_GROUP_IDS:
 
-        # get crossing group
-        crossing_group = session.query(models.CrossingGroup).filter_by(
-            id=cg_id).first()
-
         # get early and late crossings
         crossings_dict = {}
-        crossings_all = session.query(models.Crossing).filter_by(
-            crossing_group=crossing_group)
+        crossings_all = session.query(models.Crossing).join(
+            models.CrossingFeatureSetBasic).filter(
+            models.Crossing.crossing_group_id == cg_id,
+            models.CrossingFeatureSetBasic.position_x_peak.between(
+                X_0_MIN, X_0_MAX),
+            models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+                H_0_MIN, H_0_MAX))
         crossings_dict['early'] = crossings_all.filter(
             models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
         crossings_dict['late'] = crossings_all.filter(
@@ -512,14 +497,6 @@ def early_vs_late_heading_timecourse(
                 # throw away crossings that do not meet trigger criteria
                 x_0 = getattr(
                     crossing.feature_set_basic, 'position_x_{}'.format('peak'))
-                h_0 = getattr(
-                    crossing.feature_set_basic, 'heading_xyz_{}'.format('peak'))
-
-                if not (X_0_MIN <= x_0 <= X_0_MAX):
-                    continue
-
-                if not (H_0_MIN <= h_0 <= H_0_MAX):
-                    continue
 
                 # store x_0 (uw/dw position)
                 x_0s.append(x_0)
@@ -548,9 +525,9 @@ def early_vs_late_heading_timecourse(
 
     # history-dependence
     fig_size = (AX_SIZE[0] * AX_GRID[1], AX_SIZE[1] * AX_GRID[0])
-    fig_0, axs_0 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
+    fig, axs = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
 
-    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_0.flat):
+    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs.flat):
 
         # get mean and sem of headings for early and late groups
         handles = []
@@ -615,39 +592,7 @@ def early_vs_late_heading_timecourse(
         ax.plot(t, y_p_vals_05, lw=4, color=(1, 0, 0))
         ax.plot(t, y_p_vals_01, lw=4, color=(.25, 0, 0))
 
-    # position histograms
-    bincs = 0.5 * (X_0_BINS[:-1] + X_0_BINS[1:])
-    fig_1, axs_1 = plt.subplots(*AX_GRID, figsize=fig_size, tight_layout=True)
-
-    for cg_id, ax in zip(CROSSING_GROUP_IDS, axs_1.flat):
-
-        # create early and late histograms
-        handles = []
-
-        for label, color in EARLY_LATE_COLORS.items():
-
-            probs = np.histogram(
-                x_0s_dict[cg_id][label], bins=X_0_BINS, normed=True)[0]
-            handles.append(ax.plot(
-                100*bincs, probs, lw=2, color=color, label=label)[0])
-
-        p_val = ks_2samp(x_0s_dict[cg_id]['early'], x_0s_dict[cg_id]['late'])[1]
-        x_0_mean_diff = x_0s_dict[cg_id]['late'].mean() \
-            - x_0s_dict[cg_id]['early'].mean()
-
-        ax.set_xlabel(r'$x_0$ (cm)')
-        ax.set_ylabel('proportion of\ncrossings')
-
-        title = (
-            '{0} ($\Delta mean(x_0)$ = {1:10.2} cm) \n'
-            '(p = {2:10.5f} [KS test])'.format(
-                CROSSING_GROUP_LABELS[cg_id], 100 * x_0_mean_diff, p_val))
-
-        ax.set_title(title)
-        ax.legend(handles=handles, loc='best')
-        set_fontsize(ax, FONT_SIZE)
-
-    return fig_0, fig_1
+    return fig
 
 
 def early_vs_late_heading_timecourse_x0_and_t_flight_accounted_for(
