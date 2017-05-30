@@ -22,7 +22,7 @@ def nansem(x, axis=None):
     return std / sqrt_n
 
 
-def pearsonr_with_confidence(x, y, confidence=0.95):
+def pearsonr_with_confidence(x, y, confidence=0.95, n=None):
     """
     Calculate the pearson correlation coefficient, its p-value, and upper and
         lower 95% confidence bound.
@@ -33,7 +33,8 @@ def pearsonr_with_confidence(x, y, confidence=0.95):
     """
 
     rho, p = stats.pearsonr(x, y)
-    n = len(x)
+    if n is None:
+        n = len(x)
 
     # calculate confidence interval on correlation
     # how confident do we want to be?
@@ -67,7 +68,7 @@ def pearsonr_difference_significance(r_1, n_1, r_2, n_2):
     return 2*stats.norm.cdf(-np.abs(z))
 
 
-def pearsonr_partial_with_confidence(x, y, conditioned_on, confidence=0.95):
+def pearsonr_partial_with_confidence(x, y, conditioned_on, confidence=0.95, n=None):
     """
     Calculate the correlation of x and y', where y' is the difference between y
     and the best fit hyperplane of y vs. the variables in conditioned_on.
@@ -83,7 +84,7 @@ def pearsonr_partial_with_confidence(x, y, conditioned_on, confidence=0.95):
     clf.fit(inputs, y)
     y_prime = y - clf.predict(inputs)
 
-    return pearsonr_with_confidence(x, y_prime, confidence=confidence)
+    return pearsonr_with_confidence(x, y_prime, confidence=confidence, n=n)
 
 
 def cov_with_confidence(x, y, confidence=0.95):
