@@ -30,4 +30,6 @@ local_settings.py
 
 _exploratory.ipynb
 *.npy
+*.png
+
 
