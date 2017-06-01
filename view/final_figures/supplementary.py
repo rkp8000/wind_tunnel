@@ -1,16 +1,20 @@
 from __future__ import print_function, division
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 from pprint import pprint
 from sklearn import linear_model
-from db_api.connect import session
-from db_api import models
+from scipy import optimize
 from scipy.stats import ks_2samp
 
-import stats
 from axis_tools import set_fontsize
+from db_api.connect import session
+from db_api import models
+from kinematics import angular_velocity
+from plot import get_n_colors, set_font_size
 import simple_models
-from plot import get_n_colors
+from simple_tracking import GaussianLaminarPlume, SurgingAgent
+import stats
 from time_series import get_ks_p_vals
 
 from experimental_constants import DT
@@ -416,6 +420,322 @@ def early_vs_late_heading_timecourse_given_x0_and_t_flight_scatter(
 
         ax.legend(handles=hs, loc='upper center', ncol=3)
         set_fontsize(ax, 16)
+
+    return fig
+
+
+def optimize_model_params(
+        SEED,
+        DURATION, DT, BOUNDS,
+        EXPERIMENT, ODOR_STATE,
+        MAX_TRAJS_EMPIRICAL,
+        N_TIME_POINTS_EMPIRICAL,
+        SAVE_FILE_PREFIX,
+        INITIAL_PARAMS, MAX_ITERS, OPTIMIZER='fmin'):
+    """
+    Find optimal model parameters by fitting speed and angular velocity distributions of empirical
+    data.
+    """
+
+    # check to see if empirical time points have already been saved
+    file_name = '{}_{}_odor_{}.npy'.format(SAVE_FILE_PREFIX, EXPERIMENT, ODOR_STATE)
+
+    if os.path.isfile(file_name):
+        empirical = np.load(file_name)[0]
+    else:
+        print('extracting time points from data')
+
+        # get all trajectories
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPERIMENT, odor_state=ODOR_STATE, clean=True). \
+            limit(MAX_TRAJS_EMPIRICAL).all()
+
+        # get all speeds and angular velocities
+        cc = np.concatenate
+        speeds_empirical = cc([traj.velocities_a(session) for traj in trajs])
+        ws_empirical = cc([traj.angular_velocities_a(session) for traj in trajs])
+        ys_empirical = cc([traj.timepoint_field(session, 'position_y') for traj in trajs])
+
+        # sample a set of speeds and ws
+        np.random.seed(SEED)
+
+        speeds_empirical = np.random.choice(speeds_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ws_empirical = np.random.choice(ws_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ys_empirical = np.random.choice(ys_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+
+        empirical = {'speeds': speeds_empirical, 'ws': ws_empirical, 'ys': ys_empirical}
+
+        # save them for easy access next time
+        np.save(file_name, np.array([empirical]))
+
+    print('performing optimization')
+
+    # make a plume
+    pl = GaussianLaminarPlume(0, np.zeros((2,)), np.ones((2,)))
+
+    # define function to be optimized
+    def optim_fun(p):
+
+        np.random.seed(SEED)
+
+        start_pos = np.array([
+            np.random.uniform(*BOUNDS[0]),
+            np.random.uniform(*BOUNDS[1]),
+            np.random.uniform(*BOUNDS[2]),
+        ])
+
+        # make agent and trajectory
+        ag = SurgingAgent(
+            tau=p[0], noise=p[1], bias=p[2], threshold=np.inf,
+            hit_trigger='peak', surge_amp=0, tau_surge=np.inf,
+            bounds=BOUNDS)
+
+        traj = ag.track(pl, start_pos, DURATION, DT)
+
+        speeds = np.linalg.norm(traj['vs'], axis=1)
+        ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+        ws = ws[~np.isnan(ws)]
+        ys = traj['xs'][:, 1]
+
+        ks_speeds = ks_2samp(speeds, empirical['speeds'])[0]
+        ks_ws = ks_2samp(ws, empirical['ws'])[0]
+        ks_ys = ks_2samp(ys, empirical['ys'])[0]
+
+        val = ks_speeds + ks_ws + ks_ys
+
+        # punish unallowable values
+        if np.any(p < 0):
+            val += 10000
+
+        return val
+
+    # optimize it
+    if OPTIMIZER == 'fmin':
+        p_best = optimize.fmin(
+            optim_fun, np.array(INITIAL_PARAMS), maxiter=MAX_ITERS)
+    elif OPTIMIZER == 'basinhopping':
+        res = optimize.basinhopping(
+            optim_fun, np.array(INITIAL_PARAMS), niter=MAX_ITERS)
+        p_best = res.x
+
+    # generate one final trajectory
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    ag = SurgingAgent(
+        tau=p_best[0], noise=p_best[1], bias=p_best[2], threshold=np.inf,
+        hit_trigger='peak', surge_amp=0, tau_surge=np.inf,
+        bounds=BOUNDS)
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+    ys = traj['xs'][:, 1]
+
+    # make plots of things that have been optimized
+
+    ## get bins
+
+    speed_max = max(speeds.max(), empirical['speeds'].max())
+    bins_speed = np.linspace(0, speed_max, 41, endpoint=True)
+    bincs_speed = 0.5 * (bins_speed[:-1] + bins_speed[1:])
+
+    w_max = max(ws.max(), empirical['ws'].max())
+    bins_w = np.linspace(0, w_max, 41, endpoint=True)
+    bincs_w = 0.5 * (bins_w[:-1] + bins_w[1:])
+
+    bins_y = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 41, endpoint=True)
+    bincs_y = 0.5 * (bins_y[:-1] + bins_y[1:])
+
+    cts_speed, _ = np.histogram(speeds, bins=bins_speed, normed=True)
+    cts_speed_empirical, _ = np.histogram(empirical['speeds'], bins=bins_speed, normed=True)
+
+    cts_w, _ = np.histogram(ws, bins=bins_w, normed=True)
+    cts_w_empirical, _ = np.histogram(empirical['ws'], bins=bins_w, normed=True)
+
+    cts_y, _ = np.histogram(ys, bins=bins_y, normed=True)
+    cts_y_empirical, _ = np.histogram(empirical['ys'], bins=bins_y, normed=True)
+
+    fig = plt.figure(figsize=(15, 8), tight_layout=True)
+    axs = []
+
+    axs.append(fig.add_subplot(2, 3, 1))
+    axs.append(fig.add_subplot(2, 3, 2))
+    axs.append(fig.add_subplot(2, 3, 3))
+
+    axs[0].plot(bincs_speed, cts_speed_empirical, lw=2, color='k')
+    axs[0].plot(bincs_speed, cts_speed, lw=2, color='r')
+
+    axs[0].set_xticks([0, .5, 1., 1.5, 2])
+    axs[0].set_xlabel('speed (m/s)')
+    axs[0].set_ylabel('rel. counts')
+
+    axs[0].legend(['data', 'model'], fontsize=16)
+
+    axs[1].plot(bincs_w, cts_w_empirical, lw=2, color='k')
+    axs[1].plot(bincs_w, cts_w, lw=2, color='r')
+
+    axs[1].set_xticks([0, 50, 100, 150, 200])
+    axs[1].set_xlabel('ang. vel. (rad/s)')
+
+    axs[2].plot(bincs_y, cts_y_empirical, lw=2, color='k')
+    axs[2].plot(bincs_y, cts_y, lw=2, color='r')
+
+    axs[2].set_xticks([-.15, -.05, .05, .15])
+    axs[2].set_xlabel('y (m)')
+
+    axs.append(fig.add_subplot(2, 1, 2))
+
+    axs[3].plot(traj['xs'][:500, 0], traj['xs'][:500, 1], lw=2, color='k', zorder=0)
+    axs[3].scatter(traj['xs'][0, 0], traj['xs'][0, 1], lw=0, c='r', zorder=1, s=100)
+
+    axs[3].set_xlim(*BOUNDS[0])
+    axs[3].set_ylim(*BOUNDS[1])
+
+    axs[3].set_xlabel('x (m)')
+    axs[3].set_ylabel('y (m)')
+
+    axs[3].set_title('example trajectory')
+
+    for ax in axs:
+        set_font_size(ax, 16)
+
+    # print out parameters
+
+    print('best params:')
+    print('tau = {}'.format(p_best[0]))
+    print('noise = {}'.format(p_best[1]))
+    print('bias = {}'.format(p_best[2]))
+
+    return fig
+
+
+def data_vs_model_kinematics(
+        SEED, DURATION, DT, BOUNDS,
+        TAU, NOISE, BIAS,
+        EXPERIMENT, ODOR_STATE, MAX_TRAJS_EMPIRICAL,
+        N_TIME_POINTS_EMPIRICAL, SAVE_FILE_PREFIX):
+    """Plot distributions of speed, angular velocity, and crosswind positions
+    for empirical trajectories and trajectories generated by a model."""
+
+    # check to see if empirical time points have already been saved
+    file_name = '{}_{}_odor_{}.npy'.format(SAVE_FILE_PREFIX, EXPERIMENT, ODOR_STATE)
+
+    if os.path.isfile(file_name):
+        empirical = np.load(file_name)[0]
+    else:
+        print('extracting time points from data')
+
+        # get all trajectories
+        trajs = session.query(models.Trajectory).filter_by(
+            experiment_id=EXPERIMENT, odor_state=ODOR_STATE, clean=True). \
+            limit(MAX_TRAJS_EMPIRICAL).all()
+
+        # get all speeds and angular velocities
+        cc = np.concatenate
+        speeds_empirical = cc([traj.velocities_a(session) for traj in trajs])
+        ws_empirical = cc([traj.angular_velocities_a(session) for traj in trajs])
+        ys_empirical = cc([traj.timepoint_field(session, 'position_y') for traj in trajs])
+
+        # sample a set of speeds and ws
+        np.random.seed(SEED)
+
+        speeds_empirical = np.random.choice(speeds_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ws_empirical = np.random.choice(ws_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+        ys_empirical = np.random.choice(ys_empirical, N_TIME_POINTS_EMPIRICAL, replace=False)
+
+        empirical = {'speeds': speeds_empirical, 'ws': ws_empirical, 'ys': ys_empirical}
+
+        # save them for easy access next time
+        np.save(file_name, np.array([empirical]))
+
+    # make a plume
+    pl = GaussianLaminarPlume(0, np.zeros((2,)), np.ones((2,)))
+
+    # generate a trajectory
+    np.random.seed(SEED)
+
+    start_pos = np.array([
+        np.random.uniform(*BOUNDS[0]),
+        np.random.uniform(*BOUNDS[1]),
+        np.random.uniform(*BOUNDS[2]),
+    ])
+
+    ag = SurgingAgent(
+        tau=TAU, noise=NOISE, bias=BIAS, threshold=np.inf,
+        hit_trigger='peak', surge_amp=0, tau_surge=np.inf,
+        bounds=BOUNDS)
+
+    traj = ag.track(pl, start_pos, DURATION, DT)
+    speeds = np.linalg.norm(traj['vs'], axis=1)
+    ws = np.linalg.norm(angular_velocity(traj['vs'], DT), axis=1)
+    ws = ws[~np.isnan(ws)]
+    ys = traj['xs'][:, 1]
+
+    ks_speeds = ks_2samp(speeds, empirical['speeds'])[0]
+    ks_ws = ks_2samp(ws, empirical['ws'])[0]
+    ks_ys = ks_2samp(ys, empirical['ys'])[0]
+
+    ks_sum = ks_speeds + ks_ws + ks_ys
+    print('KS SUM = {}'.format(ks_sum))
+
+    # plot distributions
+    ## get bins
+    speed_max = max(speeds.max(), empirical['speeds'].max())
+    bins_speed = np.linspace(0, speed_max, 41, endpoint=True)
+    bincs_speed = 0.5 * (bins_speed[:-1] + bins_speed[1:])
+
+    w_max = max(ws.max(), empirical['ws'].max())
+    bins_w = np.linspace(0, w_max, 41, endpoint=True)
+    bincs_w = 0.5 * (bins_w[:-1] + bins_w[1:])
+
+    bins_y = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 41, endpoint=True)
+    bincs_y = 0.5 * (bins_y[:-1] + bins_y[1:])
+
+    cts_speed, _ = np.histogram(speeds, bins=bins_speed, normed=True)
+    cts_speed_empirical, _ = np.histogram(
+        empirical['speeds'], bins=bins_speed, normed=True)
+
+    cts_w, _ = np.histogram(ws, bins=bins_w, normed=True)
+    cts_w_empirical, _ = np.histogram(
+        empirical['ws'], bins=bins_w, normed=True)
+
+    cts_y, _ = np.histogram(ys, bins=bins_y, normed=True)
+    cts_y_empirical, _ = np.histogram(
+        empirical['ys'], bins=bins_y, normed=True)
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4), tight_layout=True)
+
+    axs[0].plot(bincs_speed, cts_speed_empirical, lw=2, color='k')
+    axs[0].plot(bincs_speed, cts_speed, lw=2, color='r')
+
+    axs[0].set_xticks([0, 0.5, 1., 1.5, 2])
+    axs[0].set_xlabel('speed (m/s)')
+    axs[0].set_ylabel('counts')
+
+    axs[0].legend(['data', 'model'], fontsize=16)
+
+    axs[1].plot(bincs_w, cts_w_empirical, lw=2, color='k')
+    axs[1].plot(bincs_w, cts_w, lw=2, color='r')
+
+    axs[1].set_xticks([0, 50, 100, 150, 200])
+    axs[1].set_xlabel('ang. vel. (rad/s)')
+
+    axs[2].plot(bincs_y, cts_y_empirical, lw=2, color='k')
+    axs[2].plot(bincs_y, cts_y, lw=2, color='r')
+
+    axs[2].set_xticks([-.15, -.05, .05, .15])
+    axs[2].set_xlabel('y (m)')
+
+    for ax in axs.flatten():
+        set_font_size(ax, 16)
 
     return fig
 
@@ -1239,6 +1559,157 @@ def models_vs_data_mean_history_dependence(
 
     for ax in axs:
         set_fontsize(ax, 16)
+
+    return fig
+
+
+def infotaxis_wind_speed_dependence(
+        WIND_TUNNEL_CG_IDS, INFOTAXIS_WIND_SPEED_CG_IDS, MAX_CROSSINGS,
+        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
+        X_0_MIN_SIM, X_0_MAX_SIM,
+        T_BEFORE_EXPT, T_AFTER_EXPT, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
+        FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
+    """
+    Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
+    dependence and history dependence.
+    """
+
+    from db_api.infotaxis import models as models_infotaxis
+    from db_api.infotaxis.connect import session as session_infotaxis
+
+    ts_before_expt = int(round(T_BEFORE_EXPT / DT))
+    ts_after_expt = int(round(T_AFTER_EXPT / DT))
+
+    headings = {}
+
+    # get headings for wind tunnel plume crossings
+    headings['wind_tunnel'] = {}
+
+    for cg_id in WIND_TUNNEL_CG_IDS:
+        crossings_all = session.query(models.Crossing).filter_by(crossing_group_id=cg_id).all()
+        headings['wind_tunnel'][cg_id] = []
+
+        cr_ctr = 0
+
+        for crossing in crossings_all:
+            if cr_ctr >= MAX_CROSSINGS:
+                break
+
+            # skip this crossing if it doesn't meet our inclusion criteria
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN <= x_0 <= X_0_MAX):
+                continue
+            if not (H_0_MIN <= h_0 <= H_0_MAX):
+                continue
+
+            # store crossing heading
+            temp = crossing.timepoint_field(
+                session, 'heading_xyz', -ts_before_expt, ts_after_expt - 1,
+                'peak', 'peak', nan_pad=True)
+
+            # subtract initial heading
+            temp -= temp[ts_before_expt]
+            headings['wind_tunnel'][cg_id].append(temp)
+
+            cr_ctr += 1
+
+        headings['wind_tunnel'][cg_id] = np.array(headings['wind_tunnel'][cg_id])
+
+    # get headings from infotaxis plume crossings
+    headings['infotaxis'] = {}
+
+    for cg_id in INFOTAXIS_WIND_SPEED_CG_IDS:
+
+        crossings_all = list(session_infotaxis.query(models_infotaxis.Crossing).filter_by(
+            crossing_group_id=cg_id).all())
+
+        print('{} crossings for infotaxis crossing group: "{}"'.format(
+            len(crossings_all), cg_id))
+
+        headings['infotaxis'][cg_id] = []
+
+        cr_ctr = 0
+
+        for crossing in crossings_all:
+            if cr_ctr >= MAX_CROSSINGS:
+                break
+
+            # skip this crossing if it doesn't meet our inclusion criteria
+            x_0 = crossing.feature_set_basic.position_x_peak
+            h_0 = crossing.feature_set_basic.heading_xyz_peak
+
+            if not (X_0_MIN_SIM <= x_0 <= X_0_MAX_SIM):
+                continue
+            if not (H_0_MIN <= h_0 <= H_0_MAX):
+                continue
+
+            # store crossing heading
+            temp = crossing.timepoint_field(
+                session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
+                'peak', 'peak', nan_pad=True)
+
+            temp[~np.isnan(temp)] = gaussian_filter1d(
+                temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
+
+            # subtract initial heading and store result
+            temp -= temp[TS_BEFORE_SIM]
+            headings['infotaxis'][cg_id].append(temp)
+
+            cr_ctr += 1
+
+        headings['infotaxis'][cg_id] = np.array(headings['infotaxis'][cg_id])
+
+    ## MAKE PLOTS
+    fig, axs = plt.subplots(1, 2, figsize=FIG_SIZE, tight_layout=True)
+
+    # plot wind-speed dependence of wind tunnel trajectories
+    t = np.arange(-ts_before_expt, ts_after_expt) * DT
+
+    handles = []
+
+    for cg_id in WIND_TUNNEL_CG_IDS:
+
+        label = EXPT_LABELS[cg_id]
+        color = EXPT_COLORS[cg_id]
+
+        headings_mean = np.nanmean(headings['wind_tunnel'][cg_id], axis=0)
+        headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
+
+        # plot mean and sem
+        handles.append(
+            axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
+        axs[0].fill_between(
+            t, headings_mean - headings_sem, headings_mean + headings_sem,
+            color=color, alpha=0.2)
+
+    axs[0].set_xlabel('time since crossing (s)')
+    axs[0].set_ylabel('$\Delta$ heading (degrees)')
+    axs[0].set_title('empirical (fly in ethanol)')
+
+    axs[0].legend(handles=handles, loc='best')
+
+    t = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM)
+
+    for cg_id, wt_cg_id in zip(INFOTAXIS_WIND_SPEED_CG_IDS, WIND_TUNNEL_CG_IDS):
+        label = EXPT_LABELS[wt_cg_id]
+        color = EXPT_COLORS[wt_cg_id]
+
+        headings_mean = np.nanmean(headings['infotaxis'][cg_id], axis=0)
+        headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
+
+        # plot mean and sem
+        axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
+        axs[1].fill_between(
+            t, headings_mean - headings_sem, headings_mean + headings_sem,
+            color=color, alpha=0.2)
+
+    axs[1].set_xlabel('time steps since crossing (s)')
+    axs[1].set_title('infotaxis')
+
+    for ax in axs:
+        set_fontsize(ax, FONT_SIZE)
 
     return fig
 
