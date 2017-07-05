@@ -35,7 +35,7 @@ def example_traj_and_crossings(
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, MIN_PEAK_CONC,
         TS_BEFORE_3D, TS_AFTER_3D, TS_BEFORE_HEADING, TS_AFTER_HEADING,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
-        EXPT_LABEL, FONT_SIZE):
+        EXPT_LABEL, FONT_SIZE, VIEW=(30, -60)):
     """
     Show an example trajectory through a wind tunnel plume with the crossings marked.
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
@@ -163,6 +163,9 @@ def example_traj_and_crossings(
     axs[0].set_ylabel('y (cm)')
     axs[0].set_zlabel('z (cm)')
 
+    axs[0].view_init(*VIEW)
+    axs[0].set_aspect('equal')
+
     # plot several crossings
     axs.append(fig.add_subplot(3, 1, 2, projection='3d'))
 
@@ -198,6 +201,9 @@ def example_traj_and_crossings(
     axs[1].set_xlabel('x (cm)')
     axs[1].set_ylabel('y (cm)')
     axs[1].set_zlabel('z (cm)')
+
+    axs[1].view_init(*VIEW)
+    axs[1].set_aspect('equal')
 
     # plot headings
     axs.append(fig.add_subplot(3, 2, 6))
