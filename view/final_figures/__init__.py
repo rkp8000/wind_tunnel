@@ -231,8 +231,7 @@ def example_traj_and_crossings(
 def heading_concentration_dependence(
         CROSSING_GROUP_IDS, CROSSING_GROUP_LABELS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        T_BEFORE, T_AFTER,
-        T_MODELS,
+        T_BEFORE, T_AFTER, T_MODELS,
         CROSSING_GROUP_EXAMPLE_ID,
         FIG_SIZE, CROSSING_GROUP_COLORS,
         SCATTER_SIZE, SCATTER_COLOR, SCATTER_ALPHA,
@@ -752,7 +751,6 @@ def early_late_heading_timecourse_surge_cast(
     axs[3].set_ylabel('y (m)')
 
     for ax in axs:
-
         set_font_size(ax, 20)
 
     return fig
@@ -1285,7 +1283,7 @@ def infotaxis_history_dependence(
             t, mean_late - sem_late, mean_late + sem_late,
             color='g', alpha=0.2)
 
-        ax.set_xlabel('time steps since crossing (s)')
+        ax.set_xlabel('time steps since crossing')
         ax.set_title('infotaxis - {}'.format(SIM_LABELS[cg_id]))
 
         save_data = {'t': t, 'early': mean_early, 'late': mean_late}
@@ -1526,11 +1524,13 @@ def infotaxis_average_dt(INFOTAXIS_SIM_IDS):
 
 
 def hybrid_model_history_dependence(
-        SEED, N_TRIALS, EMPIRICAL_LATE_EARLY_DIFF, SURGE_CAST_FILE,
+        SEED, N_TRIALS, EMPIRICAL_CG_ID, SURGE_CAST_FILE,
         INFOTAXIS_CG_ID, INFOTAXIS_DT,
-        X_0_MIN_SIM_HISTORY, X_0_MAX_SIM_HISTORY,
+        X_0_MIN, X_0_MAX,
+        X_0_MIN_SIM, X_0_MAX_SIM,
         H_0_MIN, H_0_MAX, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
-        EARLY_LESS_THAN, T_AVG_DIFF_START, T_AVG_DIFF_END, N_XS):
+        MAX_CROSSINGS_EARLY, T_AVG_DIFF_START, T_AVG_DIFF_END, N_XS,
+        PLOT_PROPORTION):
     """
     Show how close the model history dependence matches the empirical history
     dependence as a function of the surge-cast vs. infotaxis mixture percent.
@@ -1539,6 +1539,50 @@ def hybrid_model_history_dependence(
     random.seed(SEED)
     from db_api.infotaxis import models as models_infotaxis
     from db_api.infotaxis.connect import session as session_infotaxis
+
+    # get empirical late-early difference
+    print('Calculating empirical early-late difference...')
+    crossings_emp_all = session.query(models.Crossing).join(
+        models.CrossingFeatureSetBasic).filter(
+        models.Crossing.crossing_group_id == EMPIRICAL_CG_ID,
+        models.CrossingFeatureSetBasic.position_x_peak.between(
+            X_0_MIN, X_0_MAX),
+        models.CrossingFeatureSetBasic.heading_xyz_peak.between(
+            H_0_MIN, H_0_MAX))
+    crossings_emp_early = crossings_emp_all.filter(
+        models.Crossing.crossing_number <= MAX_CROSSINGS_EARLY)
+    crossings_emp_late = crossings_emp_all.filter(
+        models.Crossing.crossing_number > MAX_CROSSINGS_EARLY)
+
+    ts_avg_start = int(T_AVG_DIFF_START / DT)
+    ts_avg_end = int(T_AVG_DIFF_END / DT)
+
+    headings_emp_early = np.nan * np.zeros(
+        (crossings_emp_early.count(), ts_avg_end - ts_avg_start))
+    headings_emp_late = np.nan * np.zeros(
+        (crossings_emp_late.count(), ts_avg_end - ts_avg_start))
+
+    for ctr, crossing in enumerate(crossings_emp_early):
+        # get and store headings
+        headings_ = crossing.timepoint_field(
+            session, 'heading_xyz', 0, ts_avg_end - 1,
+            'peak', 'peak', nan_pad=True)
+        headings_ = headings_[ts_avg_start:]
+        headings_emp_early[ctr] = headings_.copy()
+
+    for ctr, crossing in enumerate(crossings_emp_late):
+        # get and store headings
+        headings_ = crossing.timepoint_field(
+            session, 'heading_xyz', 0, ts_avg_end - 1,
+            'peak', 'peak', nan_pad=True)
+        headings_ = headings_[ts_avg_start:]
+        headings_emp_late[ctr] = headings_.copy()
+
+    empirical_diff = np.mean(
+        np.nanmean(headings_emp_late, axis=0)
+        - np.nanmean(headings_emp_early, axis=0))
+
+    print('Empirical late-early diff = {} deg.'.format(empirical_diff))
 
     # load and sort surge-cast crossings
     data_sc = np.load(SURGE_CAST_FILE)[0]
@@ -1567,7 +1611,7 @@ def hybrid_model_history_dependence(
         x_0 = crossing.feature_set_basic.position_x_peak
         h_0 = crossing.feature_set_basic.heading_xyz_peak
 
-        if not (X_0_MIN_SIM_HISTORY <= x_0 <= X_0_MAX_SIM_HISTORY):
+        if not (X_0_MIN_SIM <= x_0 <= X_0_MAX_SIM):
             continue
         if not (H_0_MIN <= h_0 <= H_0_MAX):
             continue
@@ -1577,15 +1621,17 @@ def hybrid_model_history_dependence(
             session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
             'peak', 'peak', nan_pad=True)
 
+        # smooth crossing heading
         temp[~np.isnan(temp)] = gaussian_filter1d(
             temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
 
-        t_temp = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM) * INFOTAXIS_DT
-
         # convert crossing to be on same timescale as surge-cast crossings
+        t_temp = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM) * INFOTAXIS_DT
         crossing_r = np.nan * np.zeros(ts.shape)
+
         # identify nans for removal during resampling
         temp_mask = ~np.isnan(temp)
+
         # resample non-nan portion of crossing
         t_start = t_temp[temp_mask][0]
         t_zero = t_temp[TS_BEFORE_SIM]
@@ -1646,8 +1692,10 @@ def hybrid_model_history_dependence(
         for x in xs:
             # create hybrid crossing groups
             crossings_sorted_hybrid = {}
+
             for key, crossing_pairs_ in crossing_pairs.items():
                 crossings_sorted_hybrid[key] = []
+
                 for crossing_sc, crossing_it in crossing_pairs_:
                     crossing_hybrid = (x * crossing_sc) + ((1-x) * crossing_it)
                     crossings_sorted_hybrid[key].append(crossing_hybrid)
@@ -1655,8 +1703,9 @@ def hybrid_model_history_dependence(
             # separate into early vs. late crossings
             crossings_early = []
             crossings_late = []
+
             for key, crossing_set in crossings_sorted_hybrid.items():
-                if key < EARLY_LESS_THAN:
+                if key <= MAX_CROSSINGS_EARLY:
                     crossings_early.extend(crossing_set)
                 else:
                     crossings_late.extend(crossing_set)
@@ -1673,7 +1722,7 @@ def hybrid_model_history_dependence(
 
             model_mean_diff_t_avgs.append(mean_diff_t_avg)
 
-            abs_data_model_diff = np.abs(mean_diff_t_avg - EMPIRICAL_LATE_EARLY_DIFF)
+            abs_data_model_diff = np.abs(mean_diff_t_avg - empirical_diff)
             if abs_data_model_diff < abs_data_model_diff_best:
                 x_best = x
                 abs_data_model_diff_best = abs_data_model_diff
@@ -1683,11 +1732,11 @@ def hybrid_model_history_dependence(
         model_mean_diff_t_avgs = np.array(model_mean_diff_t_avgs)
         x_bests.append(x_best)
 
-        if np.abs(x_best - 0.8) < 0.001 and no_plot_yet:
+        if np.abs(x_best - PLOT_PROPORTION) < 0.01 and no_plot_yet:
             no_plot_yet = False
             # plot the data-model difference as a function of x
             axs[0].plot(100*xs, model_mean_diff_t_avgs, color='r', lw=2)
-            axs[0].axhline(EMPIRICAL_LATE_EARLY_DIFF, color='k', lw=2)
+            axs[0].axhline(empirical_diff, color='k', lw=2)
             axs[0].set_xlabel('% surge-cast')
             axs[0].set_ylabel('time-averaged\nlate mean minus early mean')
             axs[0].legend(['hybrid model', 'data'])
@@ -1721,7 +1770,6 @@ def hybrid_model_history_dependence(
         set_fontsize(ax, 16)
 
     return fig
-
 
 
 def infotaxis_position_distribution(
@@ -1787,157 +1835,3 @@ def infotaxis_position_distribution(
         set_fontsize(ax, FONT_SIZE)
 
     return fig
-
-
-def infotaxis_wind_speed_dependence(
-        WIND_TUNNEL_CG_IDS, INFOTAXIS_WIND_SPEED_CG_IDS, MAX_CROSSINGS,
-        X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX,
-        X_0_MIN_SIM, X_0_MAX_SIM,
-        T_BEFORE_EXPT, T_AFTER_EXPT, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
-        FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
-    """
-    Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
-    dependence and history dependence.
-    """
-
-    from db_api.infotaxis import models as models_infotaxis
-    from db_api.infotaxis.connect import session as session_infotaxis
-
-    ts_before_expt = int(round(T_BEFORE_EXPT / DT))
-    ts_after_expt = int(round(T_AFTER_EXPT / DT))
-
-    headings = {}
-
-    # get headings for wind tunnel plume crossings
-    headings['wind_tunnel'] = {}
-
-    for cg_id in WIND_TUNNEL_CG_IDS:
-        crossings_all = session.query(models.Crossing).filter_by(crossing_group_id=cg_id).all()
-        headings['wind_tunnel'][cg_id] = []
-
-        cr_ctr = 0
-
-        for crossing in crossings_all:
-            if cr_ctr >= MAX_CROSSINGS:
-                break
-
-            # skip this crossing if it doesn't meet our inclusion criteria
-            x_0 = crossing.feature_set_basic.position_x_peak
-            h_0 = crossing.feature_set_basic.heading_xyz_peak
-
-            if not (X_0_MIN <= x_0 <= X_0_MAX):
-                continue
-            if not (H_0_MIN <= h_0 <= H_0_MAX):
-                continue
-
-            # store crossing heading
-            temp = crossing.timepoint_field(
-                session, 'heading_xyz', -ts_before_expt, ts_after_expt - 1,
-                'peak', 'peak', nan_pad=True)
-
-            # subtract initial heading
-            temp -= temp[ts_before_expt]
-            headings['wind_tunnel'][cg_id].append(temp)
-
-            cr_ctr += 1
-
-        headings['wind_tunnel'][cg_id] = np.array(headings['wind_tunnel'][cg_id])
-
-    # get headings from infotaxis plume crossings
-    headings['infotaxis'] = {}
-
-    for cg_id in INFOTAXIS_WIND_SPEED_CG_IDS:
-
-        crossings_all = list(session_infotaxis.query(models_infotaxis.Crossing).filter_by(
-            crossing_group_id=cg_id).all())
-
-        print('{} crossings for infotaxis crossing group: "{}"'.format(
-            len(crossings_all), cg_id))
-
-        headings['infotaxis'][cg_id] = []
-
-        cr_ctr = 0
-
-        for crossing in crossings_all:
-            if cr_ctr >= MAX_CROSSINGS:
-                break
-
-            # skip this crossing if it doesn't meet our inclusion criteria
-            x_0 = crossing.feature_set_basic.position_x_peak
-            h_0 = crossing.feature_set_basic.heading_xyz_peak
-
-            if not (X_0_MIN_SIM <= x_0 <= X_0_MAX_SIM):
-                continue
-            if not (H_0_MIN <= h_0 <= H_0_MAX):
-                continue
-
-            # store crossing heading
-            temp = crossing.timepoint_field(
-                session_infotaxis, 'hxyz', -TS_BEFORE_SIM, TS_AFTER_SIM - 1,
-                'peak', 'peak', nan_pad=True)
-
-            temp[~np.isnan(temp)] = gaussian_filter1d(
-                temp[~np.isnan(temp)], HEADING_SMOOTHING_SIM)
-
-            # subtract initial heading and store result
-            temp -= temp[TS_BEFORE_SIM]
-            headings['infotaxis'][cg_id].append(temp)
-
-            cr_ctr += 1
-
-        headings['infotaxis'][cg_id] = np.array(headings['infotaxis'][cg_id])
-
-    ## MAKE PLOTS
-    fig, axs = plt.subplots(1, 2, figsize=FIG_SIZE, tight_layout=True)
-
-    # plot wind-speed dependence of wind tunnel trajectories
-    t = np.arange(-ts_before_expt, ts_after_expt) * DT
-
-    handles = []
-
-    for cg_id in WIND_TUNNEL_CG_IDS:
-
-        label = EXPT_LABELS[cg_id]
-        color = EXPT_COLORS[cg_id]
-
-        headings_mean = np.nanmean(headings['wind_tunnel'][cg_id], axis=0)
-        headings_sem = stats.nansem(headings['wind_tunnel'][cg_id], axis=0)
-
-        # plot mean and sem
-        handles.append(
-            axs[0].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)[0])
-        axs[0].fill_between(
-            t, headings_mean - headings_sem, headings_mean + headings_sem,
-            color=color, alpha=0.2)
-
-    axs[0].set_xlabel('time since crossing (s)')
-    axs[0].set_ylabel('$\Delta$ heading (degrees)')
-    axs[0].set_title('empirical (fly in ethanol)')
-
-    axs[0].legend(handles=handles, loc='best')
-
-    t = np.arange(-TS_BEFORE_SIM, TS_AFTER_SIM)
-
-    for cg_id, wt_cg_id in zip(INFOTAXIS_WIND_SPEED_CG_IDS, WIND_TUNNEL_CG_IDS):
-        label = EXPT_LABELS[wt_cg_id]
-        color = EXPT_COLORS[wt_cg_id]
-
-        headings_mean = np.nanmean(headings['infotaxis'][cg_id], axis=0)
-        headings_sem = stats.nansem(headings['infotaxis'][cg_id], axis=0)
-
-        # plot mean and sem
-        axs[1].plot(t, headings_mean, lw=3, color=color, zorder=1, label=label)
-        axs[1].fill_between(
-            t, headings_mean - headings_sem, headings_mean + headings_sem,
-            color=color, alpha=0.2)
-
-    axs[1].set_xlabel('time steps since crossing (s)')
-    axs[1].set_title('infotaxis')
-
-    for ax in axs:
-        set_fontsize(ax, FONT_SIZE)
-
-    return fig
-
-
-
