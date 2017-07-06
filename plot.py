@@ -44,3 +44,47 @@ def get_n_colors(n, colormap='rainbow'):
     """
 
     return getattr(cm, colormap)(np.linspace(0, 1, n))
+
+
+def draw_wind_tunnel_prism(ax, color='gray'):
+    # left box
+    ax.plot(
+        *np.array([[-0.3, -0.15, -0.15], [-0.3, 0.15, -0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, 0.15, -0.15], [-0.3, 0.15, 0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, 0.15, 0.15], [-0.3, -0.15, 0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, -0.15, 0.15], [-0.3, -0.15, -0.15]]).T,
+        color=color, zorder=-1)
+
+    # right box
+    ax.plot(
+        *np.array([[1, -0.15, -0.15], [1, 0.15, -0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[1, 0.15, -0.15], [1, 0.15, 0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[1, 0.15, 0.15], [1, -0.15, 0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[1, -0.15, 0.15], [1, -0.15, -0.15]]).T,
+        color=color, zorder=-1)
+
+    # connections between boxes
+    ax.plot(
+        *np.array([[-0.3, -0.15, -0.15], [1, -0.15, -0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, 0.15, -0.15], [1, 0.15, -0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, 0.15, 0.15], [1, 0.15, 0.15]]).T,
+        color=color, zorder=-1)
+    ax.plot(
+        *np.array([[-0.3, -0.15, 0.15], [1, -0.15, 0.15]]).T,
+        color=color, zorder=-1)
