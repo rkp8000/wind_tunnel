@@ -3,6 +3,7 @@ from copy import deepcopy
 import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import proj3d
 import numpy as np
 import random
 from random import choice
@@ -18,7 +19,7 @@ from db_api.connect import session
 
 from axis_tools import set_fontsize
 from kinematics import heading as calc_heading
-from plot import get_n_colors, set_font_size
+from plot import get_n_colors, set_font_size, draw_wind_tunnel_prism
 import simple_models
 from simple_tracking import GaussianLaminarPlume
 from simple_tracking import CenterlineInferringAgent, SurgingAgent
@@ -29,13 +30,26 @@ from time_series import get_ks_p_vals, segment_by_threshold
 from experimental_constants import DT, PLUME_PARAMS_DICT
 
 
+def orthogonal_proj(zfront, zback):
+    a = (zfront + zback) / (zfront - zback)
+    b = -2 * (zfront * zback) / (zfront - zback)
+    # -0.0001 added for numerical stability as suggested in:
+    # http://stackoverflow.com/questions/23840756
+    return np.array([[1, 0, 0, 0],
+                        [0, 1, 0, 0],
+                        [0, 0, a, b],
+                        [0, 0, -0.000001, zback]])
+
+proj3d.persp_transformation = orthogonal_proj
+
+
 def example_traj_and_crossings(
         SEED, EXPT_ID, TRAJ_NUMBER, TRAJ_START_TP, TRAJ_END_TP,
         CROSSING_GROUP, N_CROSSINGS,
         X_0_MIN, X_0_MAX, H_0_MIN, H_0_MAX, MIN_PEAK_CONC,
         TS_BEFORE_3D, TS_AFTER_3D, TS_BEFORE_HEADING, TS_AFTER_HEADING,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
-        EXPT_LABEL, FONT_SIZE, VIEW=(30, -60)):
+        EXPT_LABEL, FONT_SIZE, PLOT_PARAMS):
     """
     Show an example trajectory through a wind tunnel plume with the crossings marked.
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
@@ -147,27 +161,30 @@ def example_traj_and_crossings(
         zorder=3
     )
 
-    axs[0].set_xlim(-0.3, 1)
-    axs[0].set_ylim(-0.15, 0.15)
-    axs[0].set_zlim(-0.15, 0.15)
+    # draw wind tunnel
+    draw_wind_tunnel_prism(axs[0], color='gray')
 
-    axs[0].set_xticks([-0.3, 1.])
-    axs[0].set_yticks([-0.15, 0.15])
-    axs[0].set_zticks([-0.15, 0.15])
+    axs[0].set_xlim(PLOT_PARAMS['X_LIM'])
+    axs[0].set_ylim(PLOT_PARAMS['Y_LIM'])
+    axs[0].set_zlim(PLOT_PARAMS['Z_LIM'])
 
-    axs[0].set_xticklabels([-30, 100])
-    axs[0].set_yticklabels([-15, 15])
-    axs[0].set_zticklabels([-15, 15])
-
-    axs[0].set_xlabel('x (cm)')
-    axs[0].set_ylabel('y (cm)')
-    axs[0].set_zlabel('z (cm)')
-
-    axs[0].view_init(*VIEW)
-    axs[0].set_aspect('equal')
+    axs[0].view_init(*PLOT_PARAMS['VIEW'])
+    axs[0].set_aspect(PLOT_PARAMS['ASPECT'])
+    axs[0].axis('off')
 
     # plot several crossings
     axs.append(fig.add_subplot(3, 1, 2, projection='3d'))
+
+    # plot crossings
+    for crossing in crossing_examples:
+
+        axs[1].scatter(
+            crossing['position_x'], crossing['position_y'], crossing['position_z'],
+            c=crossing['odor'], s=SCATTER_SIZE,
+            vmin=0, vmax=MAX_CONC / 2, cmap=cmx.hot, lw=0, zorder=1, alpha=1)
+
+    # draw wind tunnel
+    draw_wind_tunnel_prism(axs[1], color='gray')
 
     # overlay plume cylinder
     axs[1].plot_surface(
@@ -178,32 +195,13 @@ def example_traj_and_crossings(
         xx, yy, zz_bottom, lw=0,
         color=CYL_COLOR, alpha=CYL_ALPHA, rstride=rstride, cstride=cstride)
 
-    # plot crossings
-    for crossing in crossing_examples:
+    axs[1].set_xlim(PLOT_PARAMS['X_LIM'])
+    axs[1].set_ylim(PLOT_PARAMS['Y_LIM'])
+    axs[1].set_zlim(PLOT_PARAMS['Z_LIM'])
 
-        axs[1].scatter(
-            crossing['position_x'], crossing['position_y'], crossing['position_z'],
-            c=crossing['odor'], s=SCATTER_SIZE,
-            vmin=0, vmax=MAX_CONC / 2, cmap=cmx.hot, lw=0, alpha=1)
-
-    axs[1].set_xlim(-0.3, 1)
-    axs[1].set_ylim(-0.15, 0.15)
-    axs[1].set_zlim(-0.15, 0.15)
-
-    axs[1].set_xticks([-0.3, 1.])
-    axs[1].set_yticks([-0.15, 0.15])
-    axs[1].set_zticks([-0.15, 0.15])
-
-    axs[1].set_xticklabels([-30, 100])
-    axs[1].set_yticklabels([-15, 15])
-    axs[1].set_zticklabels([-15, 15])
-
-    axs[1].set_xlabel('x (cm)')
-    axs[1].set_ylabel('y (cm)')
-    axs[1].set_zlabel('z (cm)')
-
-    axs[1].view_init(*VIEW)
-    axs[1].set_aspect('equal')
+    axs[1].view_init(*PLOT_PARAMS['VIEW'])
+    axs[1].set_aspect(PLOT_PARAMS['ASPECT'])
+    axs[1].axis('off')
 
     # plot headings
     axs.append(fig.add_subplot(3, 2, 6))
@@ -1312,7 +1310,7 @@ def example_trajs_real_and_models(
         HIT_INFLUENCE, TAU_MEMORY, K_0, K_S, SURGE_AMP, TAU_SURGE,
         SEED_SURGE, SEED_CENTERLINE,
         FIG_SIZE, SCATTER_SIZE, CYL_STDS, CYL_COLOR, CYL_ALPHA,
-        EXPT_LABEL, FONT_SIZE):
+        EXPT_LABEL, FONT_SIZE, PLOT_PARAMS):
     """
     Show an example trajectory through a wind tunnel plume with the crossings marked.
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
@@ -1463,12 +1461,12 @@ def example_trajs_real_and_models(
         ax.plot_surface(
             xx, yy, zz_top, lw=0,
             color=CYL_COLOR, alpha=CYL_ALPHA,
-            rstride=rstride, cstride=cstride)
+            rstride=rstride, cstride=cstride, zorder=-1)
 
         ax.plot_surface(
             xx, yy, zz_bottom, lw=0,
             color=CYL_COLOR, alpha=CYL_ALPHA,
-            rstride=rstride, cstride=cstride)
+            rstride=rstride, cstride=cstride, zorder=-1)
 
         # plot trajectory
         xs_ = traj_dict['xs']
@@ -1480,27 +1478,22 @@ def example_trajs_real_and_models(
         ax.plot(xs_, ys_, zs_, color='k', lw=3, zorder=1)
         # overlay concentrations
         ax.scatter(
-            xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2,
-            cmap=cmx.hot, lw=0, alpha=1, zorder=2)
+            xs_, ys_, zs_, c=cs_, s=SCATTER_SIZE, vmin=0, vmax=MAX_CONC/2.,
+            cmap=cmx.hot, lw=0, alpha=1)
         # mark start
         ax.scatter(
             xs_[0], ys_[0], zs_[0], s=400, marker='*', lw=0, c='g', zorder=3)
 
-        ax.set_xlim(-0.3, 1)
-        ax.set_ylim(-0.15, 0.15)
-        ax.set_zlim(-0.15, 0.15)
+        # draw wind tunnel
+        draw_wind_tunnel_prism(ax, color='gray')
 
-        ax.set_xticks([-0.3, 1.])
-        ax.set_yticks([-0.15, 0.15])
-        ax.set_zticks([-0.15, 0.15])
+        ax.set_xlim(PLOT_PARAMS['X_LIM'])
+        ax.set_ylim(PLOT_PARAMS['Y_LIM'])
+        ax.set_zlim(PLOT_PARAMS['Z_LIM'])
 
-        ax.set_xticklabels([-30, 100])
-        ax.set_yticklabels([-15, 15])
-        ax.set_zticklabels([-15, 15])
-
-        ax.set_xlabel('x (cm)')
-        ax.set_ylabel('y (cm)')
-        ax.set_zlabel('z (cm)')
+        ax.view_init(*PLOT_PARAMS['VIEW'])
+        ax.set_aspect(PLOT_PARAMS['ASPECT'])
+        ax.axis('off')
 
         ax.set_title(traj_dict['title'])
 
