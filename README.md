@@ -10,7 +10,7 @@ Install MySQL database (e.g., through https://www.mamp.info/en/)
 Make new empty database called “wind_tunnel_db”.
 
 Import database file using:
-/path/to/mysql -u<user_name> -p<password> wind_tunnel_db < /path/to/wind_tunnel_db.sql
+/path/to/mysql -uusername -ppassword wind_tunnel_db < /path/to/wind_tunnel_db.sql
 
 E.g., on a mac with MAMP using root user:
 
@@ -18,9 +18,9 @@ E.g., on a mac with MAMP using root user:
 
 It’s a large database so it will take some time. If using phpMyAdmin, you can view the database and watch the tables being populated if you want.
 
-Next you will need to create an environment variable containing the connection URI. This should be called WIND_TUNNEL_TEST_DB_CXN_URL and should look like “mysql+mysqldb://<username>:<password>@127.0.0.1:8889/wind_tunnel_db”
+Next you will need to create an environment variable containing the connection URI. This should be called WIND_TUNNEL_TEST_DB_CXN_URL and should look like “mysql+mysqldb://username:password@127.0.0.1:8889/wind_tunnel_db”
 
-Do the same for infotaxis db, calling the empty database “infotaxis_db” and populating with the file infotaxis_db.sql . Its environment variable should be called INFOTAXIS_DB_CXN_URL and should look like "mysql+mysqldb://root:root@127.0.0.1:8889/infotaxis_db"
+Do the same for infotaxis db, calling the empty database “infotaxis_db” and populating with the file infotaxis_db.sql . Its environment variable should be called INFOTAXIS_DB_CXN_URL and should look like "mysql+mysqldb://username:password@127.0.0.1:8889/infotaxis_db"
 
 ### Code
 
