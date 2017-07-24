@@ -48,5 +48,5 @@ Run:
 
 jupyter notebook
 
-To open the notebook files. All figures in the manuscript are contained in _paper_draft.ipynb. Plots involving infotaxis simulations require you to first run and save the infotaxis results, which can be done using the code cells in _paper_auxiliary.ipynb.
+To open the notebook files. All figures in the manuscript are contained in _paper_draft.ipynb. Plots involving infotaxis simulations require you to first run and save the infotaxis results, which can be done using the code cells in _paper_auxiliary_code.ipynb.
 
