@@ -1,7 +1,6 @@
 __all__ = ['connect', 'models']
 
 from datetime import datetime
-from git import Repo
 from models import Script, ScriptExecution
 
 
@@ -19,8 +18,7 @@ def add_script_execution(script_id, session, multi_use=False, notes=None):
             raise RuntimeError('Script "{}" has already been executed!'.format(script_id))
 
     # get latest commit
-    repo = Repo('/Users/rkp/Dropbox/Repositories/wind_tunnel')
-    latest_commit = repo.commit('master')
+    latest_commit = 'N/A'
 
     # add script execution to database
     session.add(ScriptExecution(script=script, commit=latest_commit, timestamp=datetime.now(), notes=notes))
