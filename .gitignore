@@ -29,7 +29,8 @@ local_settings.py
 .ipynb_checkpoints
 
 _exploratory.ipynb
+_sandbox.ipynb
 *.npy
 *.png
-
+figs_final/
 
