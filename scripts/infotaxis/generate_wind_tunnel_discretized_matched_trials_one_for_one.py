@@ -17,11 +17,21 @@ from db_api.infotaxis import add_script_execution
 from config.generate_wind_tunnel_discretized_matched_trials_one_for_one import *
 
 
-def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
+def main(
+        INSECT_PARAMS, SCRIPTNOTES, threshold=None, sim_ids=None, sim_descs=None,
+        expts=None, odor_states=None, traj_limit=None):
+    
     # add script execution to database
-    add_script_execution(SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
+    add_script_execution(
+        SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
 
-    for expt in EXPERIMENTS:
+    if expts is None:
+        expts = EXPERIMENTS
+    
+    if odor_states is None:
+        odor_states = ODOR_STATES
+        
+    for expt in expts:
         if '0.3mps' in expt:
             w = 0.3
         elif '0.4mps' in expt:
@@ -32,7 +42,7 @@ def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
         insect_params = INSECT_PARAMS.copy()
         insect_params['w'] = w
 
-        for odor_state in ODOR_STATES:
+        for odor_state in odor_states:
 
             print('Running simulation for expt "{}" with odor "{}"...'.
                   format(expt, odor_state))
@@ -45,7 +55,7 @@ def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
             # get wind tunnel copy simulation so we can match plume and insect
             # note we select the first simulation that is of this type and
             # corresponds to the right geom_config_group, since we only use the
-            # plume from it, which is independent of what insect parameters were used
+            # plume from it, which is independent of insect parameters used
             #
             # for instance, the plume bound to a simulation in which the insect
             # had D = 0.6 and that bound to a simulation where D = 0.4 will be
@@ -63,20 +73,32 @@ def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
             elif 'mosquito' in expt:
                 pl = SpreadingGaussianPlume(
                     env=ENV, dt=-1, orm=wt_copy_sims.first().plume)
+            
+            if threshold is not None:
+                print(
+                    'Setting plume detectability threshold to '
+                    '{}'.format(threshold))
+                pl.set_params(threshold=threshold)
 
             # create insect
             # note: we will actually make a new insect for each trial,
             # since the dt's vary;
-            # here we just set dt=-1, since this doesn't get stored in the db anyhow
+            # here we set dt=-1, since this doesn't get stored in the db anyhow
             ins = Insect(env=ENV, dt=-1)
             ins.set_params(**insect_params)
             ins.generate_orm(models)
 
             # create simulation
-            sim_id = SIMULATION_ID.format(insect_params['r'],
-                                          insect_params['d'],
-                                          expt, odor_state)
-            sim_desc = SIMULATION_DESCRIPTION.format(expt, odor_state)
+            if sim_ids is None:
+                sim_id = SIMULATION_ID.format(
+                    insect_params['r'], insect_params['d'], expt, odor_state)
+            else:
+                sim_id = sim_ids[(expt, odor_state)]
+                
+            if sim_descs is None:
+                sim_desc = SIMULATION_DESCRIPTION.format(expt, odor_state)
+            else:
+                sim_desc = sim_descs[(expt, odor_state)]
 
             sim = models.Simulation(id=sim_id, description=sim_desc)
             sim.env = ENV
@@ -103,7 +125,8 @@ def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
                     break
 
                 # make new plume and insect with proper dts
-                ins = Insect(env=ENV, dt=geom_config.extension_real_trajectory.avg_dt)
+                ins = Insect(
+                    env=ENV, dt=geom_config.extension_real_trajectory.avg_dt)
                 ins.set_params(**insect_params)
                 ins.loglike_function = LOGLIKE
 
@@ -122,7 +145,8 @@ def main(INSECT_PARAMS, SCRIPTNOTES, traj_limit=None):
 
                 # save trial
                 trial.add_timepoints(
-                    models, session=session, heading_smoothing=sim.heading_smoothing)
+                    models, session=session, 
+                    heading_smoothing=sim.heading_smoothing)
                 trial.generate_orm(models)
                 trial.orm.geom_config = geom_config
                 trial.orm.simulation = sim

@@ -16,32 +16,41 @@ THRESHOLDS = {'fly': 10, 'mosq': 430}
 
 SCRIPTID = 'identify_plume_crossings'
 
-def main(SIM_PREFIX, trial_limit=None):
 
+def main(SIM_PREFIX=None, sim_ids=None, thresholds=None, trial_limit=None):
+    
+    if thresholds is None:
+        thresholds = THRESHOLDS
+        
     SCRIPTNOTES = ('Identify plume crossings for simulations with prefix "{}" '
         'using heading smoothing "{}" and thresholds "{}"'.format(
-        SIM_PREFIX, HEADING_SMOOTHING, THRESHOLDS))
+        SIM_PREFIX, HEADING_SMOOTHING, thresholds))
 
-    SIM_SUFFIXES = [
-        'fruitfly_0.3mps_checkerboard_floor_odor_on',
-        'fruitfly_0.3mps_checkerboard_floor_odor_none',
-        'fruitfly_0.3mps_checkerboard_floor_odor_afterodor',
-        'fruitfly_0.4mps_checkerboard_floor_odor_on',
-        'fruitfly_0.4mps_checkerboard_floor_odor_none',
-        'fruitfly_0.4mps_checkerboard_floor_odor_afterodor',
-        'fruitfly_0.6mps_checkerboard_floor_odor_on',
-        'fruitfly_0.6mps_checkerboard_floor_odor_none',
-        'fruitfly_0.6mps_checkerboard_floor_odor_afterodor',
-        'mosquito_0.4mps_checkerboard_floor_odor_on',
-        'mosquito_0.4mps_checkerboard_floor_odor_none',
-        'mosquito_0.4mps_checkerboard_floor_odor_afterodor',]
+    if sim_ids is None:
+        SIM_SUFFIXES = [
+            'fruitfly_0.3mps_checkerboard_floor_odor_on',
+            'fruitfly_0.3mps_checkerboard_floor_odor_none',
+            'fruitfly_0.3mps_checkerboard_floor_odor_afterodor',
+            'fruitfly_0.4mps_checkerboard_floor_odor_on',
+            'fruitfly_0.4mps_checkerboard_floor_odor_none',
+            'fruitfly_0.4mps_checkerboard_floor_odor_afterodor',
+            'fruitfly_0.6mps_checkerboard_floor_odor_on',
+            'fruitfly_0.6mps_checkerboard_floor_odor_none',
+            'fruitfly_0.6mps_checkerboard_floor_odor_afterodor',
+            'mosquito_0.4mps_checkerboard_floor_odor_on',
+            'mosquito_0.4mps_checkerboard_floor_odor_none',
+            'mosquito_0.4mps_checkerboard_floor_odor_afterodor',]
 
-    SIM_IDS = ['{}_{}'.format(SIM_PREFIX, sim_suffix) for sim_suffix in SIM_SUFFIXES]
+        sim_ids = [
+            '{}_{}'.format(SIM_PREFIX, sim_suffix)
+            for sim_suffix in SIM_SUFFIXES
+        ]
 
     # add script execution to database
-    add_script_execution(SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
+    add_script_execution(
+        SCRIPTID, session=session, multi_use=True, notes=SCRIPTNOTES)
 
-    for sim_id in SIM_IDS:
+    for sim_id in sim_ids:
 
         print('Identifying crossings from simulation: "{}"'.format(sim_id))
 
@@ -57,13 +66,17 @@ def main(SIM_PREFIX, trial_limit=None):
 
         if 'fly' in sim_id:
 
-            threshold = THRESHOLDS['fly']
+            threshold = thresholds['fly']
 
         elif 'mosq' in sim_id:
 
-            threshold = THRESHOLDS['mosq']
+            threshold = thresholds['mosq']
 
-        cg_id = '{}_th_{}_hsmoothing_{}'.format(sim_id, threshold, HEADING_SMOOTHING)
+        cg_id = '{}_th_{}_hsmoothing_{}'.format(
+            sim_id, threshold, HEADING_SMOOTHING)
+        
+        print('Storing in crossing group:')
+        print(cg_id)
 
         cg = models.CrossingGroup(
             id=cg_id,

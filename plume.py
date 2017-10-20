@@ -16,7 +16,8 @@ class Environment3d(object):
 
     @staticmethod
     def diagonalest_lattice_path(r0, r1):
-        """Return a lattice path between r0 and r1 that is as close to diagonal as possible."""
+        """Return a lattice path between r0 and r1 that is as close to
+        diagonal as possible."""
         dx = r1[0] - r0[0]
         dy = r1[1] - r0[1]
         dz = r1[2] - r0[2]
@@ -25,8 +26,10 @@ class Environment3d(object):
         ystep = [0, np.sign(dy), 0]
         zstep = [0, 0, np.sign(dz)]
 
-        # to determine which lattice path yields the most "diagonal" path, we split the
-        # interval [0, 1] into segments for dx, dy, and dz, and then sort the steps by
+        # to determine which lattice path yields the most "diagonal" path,
+        # we split the
+        # interval [0, 1] into segments for dx, dy, and dz,
+        # and then sort the steps by
         # where they lie on the interval
 
         xpts = np.linspace(0, 1, np.abs(dx) + 2)[1:-1]
@@ -96,9 +99,12 @@ class Environment3d(object):
         self.center_zidx = int(np.floor(self.nz/2))
 
         # make extents for plotting
-        self.extentxy = [self.xbins[0], self.xbins[-1], self.ybins[0], self.ybins[-1]]
-        self.extentxz = [self.xbins[0], self.xbins[-1], self.zbins[0], self.zbins[-1]]
-        self.extentyz = [self.ybins[0], self.ybins[-1], self.zbins[0], self.zbins[-1]]
+        self.extentxy = [
+            self.xbins[0], self.xbins[-1], self.ybins[0], self.ybins[-1]]
+        self.extentxz = [
+            self.xbins[0], self.xbins[-1], self.zbins[0], self.zbins[-1]]
+        self.extentyz = [
+            self.ybins[0], self.ybins[-1], self.zbins[0], self.zbins[-1]]
 
     def pos_from_idx(self, idx):
         """Get floating point position from index."""
@@ -301,7 +307,9 @@ class CollimatedPlume(Plume):
 
     name = 'collimated'
 
-    def set_params(self, max_conc=None, threshold=None, ymean=None, zmean=None, ystd=None, zstd=None):
+    def set_params(
+            self, max_conc=None, threshold=None,
+            ymean=None, zmean=None, ystd=None, zstd=None):
         """params of real plume:
             ymean = 0.0105
             zmean = 0.0213

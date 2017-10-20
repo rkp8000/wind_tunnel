@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 
 TEST = False
-COMMIT = False
+COMMIT = True
 
 
 def commit(sesh):
