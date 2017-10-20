@@ -1529,7 +1529,7 @@ def hybrid_model_history_dependence(
         X_0_MIN_SIM, X_0_MAX_SIM,
         H_0_MIN, H_0_MAX, TS_BEFORE_SIM, TS_AFTER_SIM, HEADING_SMOOTHING_SIM,
         MAX_CROSSINGS_EARLY, T_AVG_DIFF_START, T_AVG_DIFF_END, N_XS,
-        PLOT_PROPORTION):
+        PLOT_PROPORTION, return_dstr=False):
     """
     Show how close the model history dependence matches the empirical history
     dependence as a function of the surge-cast vs. infotaxis mixture percent.
@@ -1767,8 +1767,11 @@ def hybrid_model_history_dependence(
 
     for ax in axs:
         set_fontsize(ax, 16)
-
-    return fig
+    
+    if not return_dstr:
+        return fig
+    else:
+        return fig, 100*np.array(x_bests)
 
 
 def infotaxis_position_distribution(
