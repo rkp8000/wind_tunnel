@@ -611,8 +611,8 @@ def early_late_heading_timecourse_surge_cast(
         SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER,
         Y_LIM, SAVE_FILE):
     """
-    Fly several agents through a simulated plume and plot their plume-crossing-triggered
-    headings.
+    Fly several agents through a simulated plume and plot their
+    plume-crossing-triggered headings.
     """
 
     # build plume and agent
@@ -661,7 +661,8 @@ def early_late_heading_timecourse_surge_cast(
 
         n_crossings.append(len(peak_times))
 
-        for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+        for ctr, (start, peak_time, end) in enumerate(
+                zip(starts, peak_times, ends)):
 
             # skip crossings that don't meet inclusion criteria
             if not (H_0_MIN <= traj['headings'][peak_time] <= H_0_MAX):
@@ -675,13 +676,15 @@ def early_late_heading_timecourse_surge_cast(
             ts_after_crossing = end - peak_time
 
             if ts_before_crossing >= ts_before:
-                crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+                crossing[:ts_before] = \
+                    traj['headings'][peak_time - ts_before:peak_time]
             else:
                 crossing[ts_before - ts_before_crossing:ts_before] = \
                     traj['headings'][start:peak_time]
 
             if ts_after_crossing >= ts_after:
-                crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+                crossing[ts_before:] = \
+                    traj['headings'][peak_time:peak_time + ts_after]
             else:
                 crossing[ts_before:ts_before + ts_after_crossing] = \
                     traj['headings'][peak_time:end]
@@ -720,22 +723,25 @@ def early_late_heading_timecourse_surge_cast(
     save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
     np.save(SAVE_FILE + '.npy', np.array([save_data]))
 
-    fig, axs = plt.figure(figsize=(14, 15), tight_layout=True), []
+    fig, axs = plt.figure(figsize=(15, 10), tight_layout=True), []
 
-    axs.append(fig.add_subplot(3, 2, 1))
-    axs.append(fig.add_subplot(3, 2, 2))
+    axs.append(fig.add_subplot(2, 2, 1))
+    axs.append(fig.add_subplot(2, 2, 2))
 
     handles = []
 
     try:
-        handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
-        axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
+        handles.append(
+            axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
+        axs[0].fill_between(
+            t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
             color='b', alpha=0.2)
     except:
         pass
 
     try:
-        handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
+        handles.append(
+            axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
         axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
             color='g', alpha=0.2)
     except:
@@ -763,29 +769,37 @@ def early_late_heading_timecourse_surge_cast(
     axs[1].set_xlabel('number of crossings')
     axs[1].set_ylabel('proportion of\ntrajectories')
 
-    axs.append(fig.add_subplot(3, 1, 2))
+    axs.append(fig.add_subplot(2, 1, 2))
 
     axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
     axs[2].axhline(0, color='gray', ls='--')
 
     axs[2].set_xlabel('x (m)')
     axs[2].set_ylabel('y (m)')
+    
+    for ax in axs:
+        set_font_size(ax, 20)
 
-    axs.append(fig.add_subplot(3, 1, 3))
-
+    fig_2, ax = plt.subplots(1, 1, figsize=(15, 4), tight_layout=True)
+    
     all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
     x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
     y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
 
-    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+    im = ax.hist2d(
+        all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins), normed=True)[3]
+    
+    cb = plt.colorbar(im, ax=ax)
+    
+    cb.ax.tick_params(labelsize=16)
+    cb.ax.set_ylabel('normalized counts ($m^{-2}$)', fontsize=16)
 
-    axs[3].set_xlabel('x (m)')
-    axs[3].set_ylabel('y (m)')
-
-    for ax in axs:
-        set_font_size(ax, 20)
-
-    return fig
+    ax.set_xlabel('x (m)')
+    ax.set_ylabel('y (m)')
+    
+    set_font_size(ax, 20)
+    
+    return fig, fig_2
 
 
 def early_late_heading_timecourse_centerline_inferring(
@@ -800,8 +814,8 @@ def early_late_heading_timecourse_centerline_inferring(
         MAX_CROSSINGS_EARLY,
         SUBTRACT_PEAK_HEADING, T_BEFORE, T_AFTER, Y_LIM, SAVE_FILE):
     """
-    Fly several agents through a simulated plume and plot their plume-crossing-triggered
-    headings.
+    Fly several agents through a simulated plume and plot their 
+    plume-crossing-triggered headings.
     """
 
     # build plume and agent
@@ -852,7 +866,8 @@ def early_late_heading_timecourse_centerline_inferring(
 
         n_crossings.append(len(peak_times))
 
-        for ctr, (start, peak_time, end) in enumerate(zip(starts, peak_times, ends)):
+        for ctr, (start, peak_time, end) in enumerate(
+                zip(starts, peak_times, ends)):
 
             if not (H_0_MIN <= traj['headings'][peak_time] < H_0_MAX):
                 continue
@@ -866,13 +881,15 @@ def early_late_heading_timecourse_centerline_inferring(
             ts_after_crossing = end - peak_time
 
             if ts_before_crossing >= ts_before:
-                crossing[:ts_before] = traj['headings'][peak_time - ts_before:peak_time]
+                crossing[:ts_before] = \
+                    traj['headings'][peak_time - ts_before:peak_time]
             else:
                 crossing[ts_before - ts_before_crossing:ts_before] = \
                     traj['headings'][start:peak_time]
 
             if ts_after_crossing >= ts_after:
-                crossing[ts_before:] = traj['headings'][peak_time:peak_time + ts_after]
+                crossing[ts_before:] = \
+                    traj['headings'][peak_time:peak_time + ts_after]
             else:
                 crossing[ts_before:ts_before + ts_after_crossing] = \
                     traj['headings'][peak_time:end]
@@ -900,17 +917,19 @@ def early_late_heading_timecourse_centerline_inferring(
     save_data = {'t': t, 'early': h_mean_early, 'late': h_mean_late}
     np.save(SAVE_FILE, np.array([save_data]))
 
-    fig, axs = plt.figure(figsize=(14, 15), tight_layout=True), []
+    fig, axs = plt.figure(figsize=(15, 10), tight_layout=True), []
 
-    axs.append(fig.add_subplot(3, 2, 1))
-    axs.append(fig.add_subplot(3, 2, 2))
+    axs.append(fig.add_subplot(2, 2, 1))
+    axs.append(fig.add_subplot(2, 2, 2))
 
     handles = []
 
     try:
 
-        handles.append(axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
-        axs[0].fill_between(t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
+        handles.append(
+            axs[0].plot(t, h_mean_early, lw=3, color='b', label='early')[0])
+        axs[0].fill_between(
+            t, h_mean_early - h_sem_early, h_mean_early + h_sem_early,
             color='b', alpha=0.2)
 
     except:
@@ -919,7 +938,8 @@ def early_late_heading_timecourse_centerline_inferring(
 
     try:
 
-        handles.append(axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
+        handles.append(
+            axs[0].plot(t, h_mean_late, lw=3, color='g', label='late')[0])
         axs[0].fill_between(t, h_mean_late - h_sem_late, h_mean_late + h_sem_late,
             color='g', alpha=0.2)
 
@@ -947,29 +967,37 @@ def early_late_heading_timecourse_centerline_inferring(
     axs[1].set_xlabel('number of crossings')
     axs[1].set_ylabel('proportion of\ntrajectories')
 
-    axs.append(fig.add_subplot(3, 1, 2))
+    axs.append(fig.add_subplot(2, 1, 2))
 
     axs[2].plot(trajs[0]['xs'][:, 0], trajs[0]['xs'][:, 1])
     axs[2].axhline(0, color='gray', ls='--')
 
     axs[2].set_xlabel('x (m)')
     axs[2].set_ylabel('y (m)')
+    
+    for ax in axs:
+        set_font_size(ax, 20)
 
-    axs.append(fig.add_subplot(3, 1, 3))
+    fig_2, ax = plt.subplots(1, 1, figsize=(15, 4), tight_layout=True)
 
     all_xy = np.concatenate([traj['xs'][:, :2] for traj in trajs[:3000]], axis=0)
     x_bins = np.linspace(BOUNDS[0][0], BOUNDS[0][1], 66, endpoint=True)
     y_bins = np.linspace(BOUNDS[1][0], BOUNDS[1][1], 30, endpoint=True)
 
-    axs[3].hist2d(all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins))
+    im = ax.hist2d(
+        all_xy[:, 0], all_xy[:, 1], bins=(x_bins, y_bins), normed=True)[3]
+    
+    cb = plt.colorbar(im, ax=ax)
+    
+    cb.ax.tick_params(labelsize=16)
+    cb.ax.set_ylabel('normalized counts ($m^{-2}$)', fontsize=16)
+    
+    ax.set_xlabel('x (m)')
+    ax.set_ylabel('y (m)')
 
-    axs[3].set_xlabel('x (m)')
-    axs[3].set_ylabel('y (m)')
-
-    for ax in axs:
-        set_font_size(ax, 20)
-
-    return fig
+    set_font_size(ax, 20)
+    
+    return fig, fig_2
 
 
 def early_vs_late_heading_timecourse_given_x0_and_t_flight(
