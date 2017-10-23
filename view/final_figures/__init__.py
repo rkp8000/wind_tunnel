@@ -55,7 +55,8 @@ def example_traj_and_crossings(
     Show many crossings overlaid on the plume in 3D and show the mean peak-triggered heading
     with its SEM as well as many individual examples.
     """
-
+    conc_factor = 0.0476 / 526
+    
     if isinstance(TRAJ_NUMBER, int):
         trajs = session.query(models.Trajectory).filter_by(
             experiment_id=EXPT_ID, odor_state='on', clean=True).all()
@@ -78,6 +79,7 @@ def example_traj_and_crossings(
     crossing_examples = []
     crossing_ctr = 0
     headings = []
+    odors = []
 
     for idx in plot_idxs:
         crossing = crossings_all[idx]
@@ -102,6 +104,10 @@ def example_traj_and_crossings(
             crossing_dict['heading'] = crossing.timepoint_field(
                 session, 'heading_xyz', -TS_BEFORE_HEADING, TS_AFTER_HEADING - 1,
                 'peak', 'peak', nan_pad=True)
+            
+            crossing_dict['odor_padded'] = crossing.timepoint_field(
+                session, 'odor', -TS_BEFORE_HEADING, TS_AFTER_HEADING - 1,
+                'peak', 'peak', nan_pad=True)
 
             crossing_examples.append(crossing_dict)
 
@@ -111,6 +117,13 @@ def example_traj_and_crossings(
             'peak', 'peak', nan_pad=True)
 
         headings.append(temp)
+        
+        # store crossing odor
+        temp_odor = crossing.timepoint_field(
+            session, 'odor', -TS_BEFORE_HEADING, TS_AFTER_HEADING - 1,
+            'peak', 'peak', nan_pad=True)
+        
+        odors.append(temp_odor)
 
         # increment crossing ctr
         crossing_ctr += 1
@@ -211,11 +224,11 @@ def example_traj_and_crossings(
     headings_std = np.nanstd(headings, axis=0)
     headings_sem = stats.nansem(headings, axis=0)
 
-    # plot example crossings
+    ## plot example crossings
     for crossing in crossing_examples:
         axs[2].plot(t, crossing['heading'], lw=1, color='k', alpha=0.5, zorder=-1)
 
-    # plot mean, sem, and std
+    ## plot mean, sem, and std
     axs[2].plot(t, headings_mean, lw=3, color='k', zorder=1)
     axs[2].plot(t, headings_mean - headings_std, lw=3, ls='--', color='k', zorder=1)
     axs[2].plot(t, headings_mean + headings_std, lw=3, ls='--', color='k', zorder=1)
@@ -225,6 +238,21 @@ def example_traj_and_crossings(
 
     axs[2].set_xlabel('time since crossing (s)')
     axs[2].set_ylabel('heading (degrees)')
+    
+    # plot odors
+    axs.append(fig.add_subplot(3, 2, 5))
+    t = np.arange(-TS_BEFORE_HEADING, TS_AFTER_HEADING) * DT
+    odors_mean = conc_factor * np.nanmean(odors, axis=0)
+    odors_std = conc_factor * np.nanstd(odors, axis=0)
+    odors_sem = conc_factor * stats.nansem(odors, axis=0)
+    
+    ## plot example crossings
+    for crossing in crossing_examples:
+        axs[3].plot(t, conc_factor * crossing['odor_padded'], lw=1, color='r', alpha=0.5, zorder=-1)
+        
+    ## set labels
+    axs[3].set_xlabel('time since crossing (s)')
+    axs[3].set_ylabel('ethanol concentration (%)')
 
     for ax in axs:
         set_fontsize(ax, FONT_SIZE)
@@ -1776,7 +1804,7 @@ def hybrid_model_history_dependence(
 
 def infotaxis_position_distribution(
         HEAT_MAP_EXPT_ID, HEAT_MAP_SIM_ID, N_HEAT_MAP_TRAJS, X_BINS, Y_BINS,
-        FIG_SIZE, FONT_SIZE, EXPT_LABELS, EXPT_COLORS, SIM_LABELS):
+        FIG_SIZE, FONT_SIZE):
     """
     Show infotaxis-generated trajectories alongside empirical trajectories. Show wind-speed
     dependence and history dependence.
@@ -1788,7 +1816,8 @@ def infotaxis_position_distribution(
     # get heatmaps
     if N_HEAT_MAP_TRAJS:
         trajs_expt = session.query(models.Trajectory).\
-            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on').limit(N_HEAT_MAP_TRAJS)
+            filter_by(experiment_id=HEAT_MAP_EXPT_ID, odor_state='on').\
+            limit(N_HEAT_MAP_TRAJS)
         trials_sim = session_infotaxis.query(models_infotaxis.Trial).\
             filter_by(simulation_id=HEAT_MAP_SIM_ID).limit(N_HEAT_MAP_TRAJS)
 
@@ -1822,8 +1851,10 @@ def infotaxis_position_distribution(
     fig, axs = plt.subplots(2, 1, figsize=FIG_SIZE, tight_layout=True)
 
     # plot heat maps
-    axs[0].hist2d(expt_xs, expt_ys, bins=(X_BINS, Y_BINS))
-    axs[1].hist2d(sim_xs, sim_ys, bins=(X_BINS, Y_BINS))
+    im_expt = axs[0].hist2d(
+        expt_xs, expt_ys, bins=(X_BINS, Y_BINS), normed=True)[3]
+    im_it = axs[1].hist2d(
+        sim_xs, sim_ys, bins=(X_BINS, Y_BINS), normed=True)[3]
 
     axs[0].set_ylabel('y (m)')
     axs[0].set_xlabel('x (m)')
@@ -1832,6 +1863,15 @@ def infotaxis_position_distribution(
 
     axs[0].set_title('experimental')
     axs[1].set_title('infotaxis simulation')
+    
+    cb_expt = plt.colorbar(im_expt, ax=axs[0])
+    cb_it = plt.colorbar(im_it, ax=axs[1])
+    
+    cb_expt.ax.tick_params(labelsize=16)
+    cb_it.ax.tick_params(labelsize=16)
+    
+    cb_expt.ax.set_ylabel('normalized counts ($m^{-2}$)', fontsize=16)
+    cb_it.ax.set_ylabel('normalized counts ($m^{-2}$)', fontsize=16)
 
     for ax in axs:
         set_fontsize(ax, FONT_SIZE)

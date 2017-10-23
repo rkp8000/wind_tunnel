@@ -82,7 +82,8 @@ class Trajectory(Base):
     def timepoints(self, session):
         """Return all timepoints associated with this trajectory."""
         tps = session.query(Timepoint).filter(
-            Timepoint.id.between(self.start_timepoint_id, self.end_timepoint_id)).all()
+            Timepoint.id.between(
+                self.start_timepoint_id, self.end_timepoint_id)).all()
 
         return tps
 
