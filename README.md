@@ -4,6 +4,10 @@ code for analyzing mosquito and drosophila data collected in a wind tunnel
 
 ### Data
 
+Download and compile the relevant database from the Dryad Digital Repository: https://doi.org/10.5061/dryad.n0b8m .
+
+To view and access the data:
+
 Install MySQL database (e.g., through https://www.mamp.info/en/)
 (Note: to access phpMyAdmin (database GUI) through the MAMP start page, on MAMP window click Preferences, and change PHP version to 7.0.x)
 
@@ -26,7 +30,7 @@ Do the same for infotaxis db, calling the empty database “infotaxis_db” and 
 
 Getting code to run using Anaconda and Python 2.7:
 
-Download Anaconda.
+Download Anaconda for Python 2.7 (https://www.anaconda.com/download/#macos).
 
 Create new environment using Python 2.7 and Anaconda:
 conda create --name wind_tunnel_env python=2.7 anaconda
